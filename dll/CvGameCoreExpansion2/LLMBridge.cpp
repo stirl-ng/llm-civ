@@ -3,10 +3,14 @@
 #include "Logger.h"
 
 #include <windows.h>
+#include <queue>
 
 namespace {
     NamedPipeClient* g_client = NULL;
     bool g_initialized = false;
+    bool g_queue_initialized = false;
+    CRITICAL_SECTION g_queue_cs;
+    std::queue<std::string> g_inbound;
 
     std::wstring get_pipe_name() {
         wchar_t buf[512];
@@ -17,11 +21,28 @@ namespace {
         return L"\\\\.\\pipe\\civv_llm";
     }
 
+    void ensure_queue() {
+        if (!g_queue_initialized) {
+            InitializeCriticalSection(&g_queue_cs);
+            g_queue_initialized = true;
+        }
+    }
+
+    void destroy_queue() {
+        if (!g_queue_initialized) return;
+        DeleteCriticalSection(&g_queue_cs);
+        while (!g_inbound.empty()) {
+            g_inbound.pop();
+        }
+        g_queue_initialized = false;
+    }
+
     void on_receive(const std::string& msg) {
-        // For now we just log inbound messages. Integration points can hook here.
+        ensure_queue();
         logger::info(std::string("RX ") + msg);
-        // TODO: validate against schemas/state.schema.json and actions.schema.json
-        // TODO: dispatch actions to game systems
+        EnterCriticalSection(&g_queue_cs);
+        g_inbound.push(msg);
+        LeaveCriticalSection(&g_queue_cs);
     }
 }
 
@@ -29,6 +50,7 @@ namespace llmbridge {
 
 bool initialize() {
     if (g_initialized) return true;
+    ensure_queue();
     logger::init();
     logger::info(L"LLMBridge initializing");
     if (g_client == NULL) {
@@ -59,6 +81,7 @@ void shutdown() {
         delete g_client;
         g_client = NULL;
     }
+    destroy_queue();
     logger::shutdown();
 }
 
@@ -76,6 +99,26 @@ bool send_json(const char* json_utf8) {
 
 bool is_connected() {
     return g_client && g_client->is_connected();
+}
+
+bool receive_next(std::string& json_utf8) {
+    if (!g_queue_initialized) return false;
+    EnterCriticalSection(&g_queue_cs);
+    if (g_inbound.empty()) {
+        LeaveCriticalSection(&g_queue_cs);
+        return false;
+    }
+    json_utf8 = g_inbound.front();
+    g_inbound.pop();
+    LeaveCriticalSection(&g_queue_cs);
+    return true;
+}
+
+void requeue(const std::string& json_utf8) {
+    ensure_queue();
+    EnterCriticalSection(&g_queue_cs);
+    g_inbound.push(json_utf8);
+    LeaveCriticalSection(&g_queue_cs);
 }
 
 extern "C" __declspec(dllexport) bool LLMBridge_Initialize() { return initialize(); }
