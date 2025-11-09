@@ -1,0 +1,8 @@
+*.pyc
+*.tlog
+*.pdb
+*.exp
+*.lib
+*.obj
+*.exe
+*.dll
