@@ -1,0 +1,17 @@
+name: openai-demo
+backend:
+  kind: openai
+  model: gpt-4o-mini
+  # If you use a compatible server (vLLM/Ollama), set base_url and model accordingly, e.g.:
+  # base_url: http://localhost:11434/v1
+  # model: llama3
+tools:
+  - kind: rag
+    corpus:
+      - "Civilization V policies: Tradition, Liberty, Honor."
+strategy:
+  name: vanilla
+  temperature: 0.2
+orchestrator:
+  pipe: "\\\\.\\pipe\\civv_llm"
+

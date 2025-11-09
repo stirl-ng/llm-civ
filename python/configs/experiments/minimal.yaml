@@ -1,0 +1,19 @@
+name: smoke-dryrun
+seed: 1
+backend:
+  kind: dummy
+  seed: 42
+tools:
+  - kind: rag
+    corpus:
+      - "Civilization V policies: Tradition, Liberty, Honor."
+      - "Rationalism boosts science output mid-game."
+  - kind: web
+  - kind: mcp
+strategy:
+  name: vanilla
+  temperature: 0.2
+orchestrator:
+  pipe: "\\\\.\\pipe\\civv_llm"
+logging:
+  dir: python/logs
