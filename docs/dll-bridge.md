@@ -1,51 +1,67 @@
-DLL Bridge Overview
+# DLL ←→ Orchestrator Bridge Plan
 
-- Purpose: Provide a Civ V DLL-side bridge to the orchestrator via a Windows named pipe (`\\.\pipe\civv_llm` by default, overridable with `CIVV_PIPE`).
-- Status: Initial scaffold with background IO, logging, and exported C API entry points.
+This document replaces the previous placeholder and lays out a pragmatic plan for streaming Civ V state into the orchestrator and receiving actions back from Python services.
 
-Build
+## Objectives
+- Emit a dependable stream of framed JSON payloads that capture turn-level context plus targeted incremental updates.
+- Accept low-latency action messages from the orchestrator without stalling the main game thread.
+- Keep everything additive: the bridge must fail soft (no saves corrupted, no desyncs) if the external stack is offline.
 
-- Open `dll/CvGameCoreExpansion2.sln` in Visual Studio 2013 (toolset v120).
-- Select `Release | Win32` and Build.
-- Output: `dll/bin/Release/CvGameCoreExpansion2.dll`.
+## Architecture Overview
 
-Key Components
+| Layer | Responsibilities |
+| --- | --- |
+| GameCore DLL (`CvGame`) | Produce structured state, enqueue outbound messages, surface action hooks. |
+| Bridge Runtime (`GameStatePipe` → `LLMBridge`) | Maintain named-pipe connections, framing, back-pressure, logging. |
+| Orchestrator (Python) | Consume state, invoke LLMs/agents, send actions. |
 
-- `LLMBridge` (C API):
-  - `bool LLMBridge_Initialize()` – starts the bridge, spawns IO threads.
-  - `void LLMBridge_Shutdown()` – stops IO and cleans up.
-  - `bool LLMBridge_Send(const char* json_utf8)` – queues JSON to send.
-  - `bool LLMBridge_IsConnected()` – returns pipe connection status.
+- **Transport**: Named pipe (`\\.\pipe\CivVPGameState` by default, overridable via `CIVV_PIPE`). Message framing is newline-delimited UTF-8 JSON to stay tooling-friendly.
+- **Threads**: Keep Civ’s main thread free by queuing outbound messages and having a lightweight worker flush them. Inbound actions are posted to `CvDllContext::QueueGameMessage` so they run during normal update ticks.
+- **Schema**:
+  - `state.turn`: `{ turn:int, playersAlive:int, civsEver:int, summary:{ ... } }`
+  - `state.snapshot`: coarse but deterministic data (city list, resources, diplo standings) emitted on demand.
+  - `action.request`: orchestrator → DLL order (unit moves, research choices, etc.).
 
-- `NamedPipeClient`:
-  - Background reader/writer threads; non-blocking to game loop.
-  - Auto-reconnect with simple backoff; 1 MB message cap.
-  - Basic JSON sanity checks (TODO: schema validation).
+## Implementation Plan
 
-- Logging:
-  - Appends to `%LOCALAPPDATA%\LLMCiv\llmbridge.log`.
+### Phase 0 – Baseline Pipe (done now)
+1. Embed `GameStatePipe` in `CvGame` (constructor/destructor + `SendTurnData` after `DoGameStarted` and every `doTurn`).
+2. Emit minimal JSON so downstream tooling can confirm the plumbing.
 
-Configuration
+### Phase 1 – Bridge Manager
+1. Wrap `GameStatePipe` in an `LLMBridge` singleton that owns:
+   - lock-free ring buffers for outbound/inbound messages,
+   - a background flusher thread (Win32 handle + event).
+2. Surface a small C API (`LLMBridge_Initialize`, `LLMBridge_Shutdown`, `LLMBridge_Send`, `LLMBridge_PollAction`).
+3. Add logging to `%LOCALAPPDATA%\LLMCiv\llmbridge.log` with throttled error spam.
 
-- `CIVV_PIPE`: override named pipe (e.g., `\\\\.\\pipe\\custom_pipe`).
+### Phase 2 – State Schema & Dispatch
+1. Define JSON schema files (`schemas/state.turn.json`, `schemas/state.snapshot.json`) and keep them under `docs/schemas/`.
+2. Implement serializers in the DLL:
+   - Turn summary (already streaming).
+   - Optional snapshot builder (triggered via hotkey or orchestrator request).
+3. In orchestrator, author a `StateIngestor` module that validates payloads and fans them out to agents.
 
-Next Steps
+### Phase 3 – Action Intake
+1. Allow orchestrator to push commands:
+   - Named pipe message `{ "kind":"action.request", "id":"uuid", "payload":{...} }`.
+   - Bridge enqueues to a thread-safe queue drained during `CvGame::update`.
+2. Map high-level verbs to game APIs (e.g., `move_unit`, `choose_research`, `policy_pick`).
+3. Return `{ "kind":"action.result", "id":... }` so orchestrator can correlate futures.
 
-- Schema validation against `schemas/state.schema.json` and `schemas/actions.schema.json`.
-- In-game dispatch: translate inbound actions into Civ V game events.
-- Robust error handling and metrics.
-- Unit tests for message handling and queueing.
+### Phase 4 – Reliability & Tooling
+1. Add per-message sequence numbers and timestamps for replay/debug.
+2. Expose a developer HUD panel (Lua) showing connection status and last action.
+3. Ship a Python harness (`scripts/pipe_probe.py`) to smoke-test the bridge without launching Civ.
 
-Harness (Optional)
+### Phase 5 – Testing & Release
+1. Unit-test bridge serialization using GoogleTest (no game dependency).
+2. Integration-test via automated hotseat save that runs 5 turns with orchestrator loopback.
+3. Document build/run instructions in `docs/orchestrator.md`.
 
-- Project: `LLMBridgeHarness` builds a console app to exercise the bridge.
-- Output: `dll/bin/Release/LLMBridgeHarness.exe`.
-- Usage:
-  - Client mode (default):
-    - Start orchestrator: from `python/`, `python -m orchestrator`.
-    - Run: `LLMBridgeHarness.exe` or override pipe via `--pipe \\.\\pipe\\civv_llm`.
-    - Custom JSON: `--json '{"kind":"ping","source":"harness"}'`.
-  - Server mode (loopback without orchestrator):
-    - Terminal A (server): `LLMBridgeHarness.exe --server --pipe \\.\\pipe\\civv_llm`
-    - Terminal B (client): `LLMBridgeHarness.exe --pipe \\.\\pipe\\civv_llm --json '{"kind":"ping"}'`
-    - `--once` makes the server handle one client then exit.
+## Immediate Next Steps
+1. Promote the current `GameStatePipe` helper into a reusable `LLMBridge` module (Phase 1).
+2. Flesh out the JSON schema + orchestrator consumer (Phase 2).
+3. Iterate on action intake once state streaming is stable.
+
+This plan balances incremental delivery (you already have live turn data) with a clear path to a fully bidirectional bridge. Update this doc as milestones land.***
