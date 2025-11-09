@@ -34,7 +34,7 @@ The result: automated Civ players driven by an LLM, fully deterministic and hots
   - Background thread manages IO.  
   - Main game thread drains inbound queue during turn execution.  
 - **Python Orchestrator**  
-  - Connects to `\\.\pipe\civv_llm`.  
+  - Runs a named-pipe server at `\\.\pipe\civv_llm` by default.  
   - Receives state snapshots.  
   - Prompts the LLM for next actions.  
   - Validates schema.  
@@ -46,7 +46,7 @@ The result: automated Civ players driven by an LLM, fully deterministic and hots
 
 1. Install **Civilization V SDK** from Steam.
 2. Clone the official DLL source (BNW) or use the Community Patch Project (CPP) repo as reference.
-3. Open the solution in **Visual Studio 2013** (or newer with v120 toolset).
+3. Open the solution in **Visual Studio 2013** (or newer). See toolset notes below.
 4. Add [RapidJSON](https://github.com/Tencent/rapidjson) to the project (header-only).
 5. Implement the pipe server (`CreateNamedPipe`, overlapped IO) and the turn hooks as described in `CvPlayer::doTurn()`.
 6. Build in **Release** mode.
@@ -55,35 +55,35 @@ The result: automated Civ players driven by an LLM, fully deterministic and hots
 
 ---
 
+## Visual Studio Toolset
+
+- Default projects target the VS2013 toolset (`v120`) only as a fallback. You can override the toolset when building with newer Visual Studio/MSBuild.
+- Recommended: use VS 2022 (v143) with Win32/Release.
+
+Retarget options:
+
+- MSBuild (no file edits):
+  - `msbuild dll\\CvGameCoreExpansion2.sln /t:Build /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143`
+- Visual Studio IDE:
+  - File > Open > Project/Solution… and open `dll\\CvGameCoreExpansion2.sln`.
+  - If prompted, click “Retarget projects” and choose `v143` (or `v142`).
+  - Or per‑project: Properties > General > Platform Toolset = `v143`.
+
+If VS reports the solution as corrupt, close VS and delete the repo’s `.vs` folder, then open the solution directly (avoid “Open Folder”).
+
+### Output paths and names
+
+- DLL output: `dll\\bin\\Win32\\Release\\CvGameCore_Expansion2.dll`
+- Harness output: `dll\\bin\\Win32\\Release\\LLMBridgeHarness.exe`
+- Intermediates: under `dll\\obj\\<ProjectName>\\Win32\\Release\\`
+
+Note: The DLL `TargetName` is set to `CvGameCore_Expansion2` to match Civilization V’s expected filename.
+
+---
+
 ## Build Instructions (Python)
 
-Requirements:
-- Python 3.9+
-- `pywin32` (for named pipe access)
-- Any LLM client library (OpenAI, local model, etc.)
-
-Example client:
-
-```python
-import json, win32file
-
-pipe = r'\\.\pipe\civv_llm'
-handle = win32file.CreateFile(pipe, win32file.GENERIC_READ | win32file.GENERIC_WRITE,
-                              0, None, win32file.OPEN_EXISTING, 0, None)
-
-def send(obj):
-    win32file.WriteFile(handle, (json.dumps(obj) + "\n").encode("utf-8"))
-
-def recv():
-    _, data = win32file.ReadFile(handle, 4096)
-    return json.loads(data.decode("utf-8").strip())
-
-while True:
-    msg = recv()
-    if msg.get("kind") == "state":
-        # Example: always pick Pottery
-        send({"kind":"actions","data":{"research":"TECH_POTTERY"}})
-````
+See `docs/orchestrator.md` for running the Python orchestrator scaffold (`python -m orchestrator`).
 
 ---
 
