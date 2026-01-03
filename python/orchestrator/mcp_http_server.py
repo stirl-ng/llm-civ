@@ -3,6 +3,11 @@ HTTP-based MCP Server for Civilization V
 
 Provides an HTTP interface for LLMs to control the game via tool calls.
 Runs alongside the orchestrator in a background thread.
+
+Sequential action flow:
+- LLM calls send_action via POST /tool
+- Action is sent immediately to DLL, response returned to LLM
+- LLM can react to results before sending next action
 """
 
 import json
@@ -24,6 +29,18 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args):
         """Override to use our logger."""
         logger.info(format % args)
+
+    def do_OPTIONS(self):
+        """Handle CORS preflight requests."""
+        self.send_response(200)
+        self._send_cors_headers()
+        self.end_headers()
+
+    def _send_cors_headers(self):
+        """Add CORS headers to response."""
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
     def do_GET(self):
         """Handle GET requests."""
@@ -50,10 +67,6 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
 
         if self.path == "/tool":
             self._handle_tool_call(request)
-        elif self.path == "/state":
-            # Update state (called by orchestrator)
-            self.mcp_server.update_state(request)
-            self._send_json({"status": "updated"})
         else:
             self._send_error(404, "Not found")
 
@@ -77,7 +90,7 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
         """Send JSON response."""
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._send_cors_headers()
         self.end_headers()
         self.wfile.write(json.dumps(data, indent=2).encode())
 
@@ -89,11 +102,8 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
 class MCPHTTPServer:
     """HTTP server wrapper for MCP server.
 
-    Turn-based flow:
-    1. Orchestrator calls start_turn(state) when DLL signals turn
-    2. LLM makes HTTP calls to /tool endpoint
-    3. Orchestrator calls wait_for_turn_end() which blocks
-    4. Orchestrator calls get_turn_result() to get actions
+    The orchestrator accesses mcp_server directly to manage turns.
+    HTTP handlers use mcp_server to execute tool calls.
     """
 
     def __init__(self, host: str = "localhost", port: int = 8765, turn_timeout: float = 300.0):
@@ -120,21 +130,9 @@ class MCPHTTPServer:
             self.http_server.shutdown()
             logger.info("MCP HTTP Server stopped")
 
-    def start_turn(self, state: dict) -> None:
-        """Start a new turn - called by orchestrator when DLL signals turn."""
-        self.mcp_server.start_turn(state)
-
-    def wait_for_turn_end(self, timeout: Optional[float] = None) -> bool:
-        """Block until LLM calls end_turn or timeout. Returns True if ended normally."""
-        return self.mcp_server.wait_for_turn_end(timeout)
-
-    def get_turn_result(self) -> tuple[list, str]:
-        """Get (actions, notes) from the completed turn."""
-        return self.mcp_server.get_turn_result()
-
 
 def run_http_server(host: str = "localhost", port: int = 8765):
-    """Run the MCP HTTP server standalone."""
+    """Run the MCP HTTP server standalone (for testing)."""
     server = MCPHTTPServer(host, port)
     server.start()
 
@@ -142,7 +140,6 @@ def run_http_server(host: str = "localhost", port: int = 8765):
     print("Press Ctrl+C to stop...")
 
     try:
-        # Keep main thread alive
         import time
         while True:
             time.sleep(1)

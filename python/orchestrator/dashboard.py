@@ -51,13 +51,9 @@ def setup_dashboard_logging():
     handler.setLevel(logging.DEBUG)
     handler.setFormatter(logging.Formatter("%(message)s"))
 
-    # Add to root logger to capture everything
+    # Add to root logger only - child loggers propagate up
     root_logger = logging.getLogger()
     root_logger.addHandler(handler)
-
-    # Also add to orchestrator logger
-    orch_logger = logging.getLogger("orchestrator")
-    orch_logger.addHandler(handler)
 
 
 def get_logs(
