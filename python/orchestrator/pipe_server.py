@@ -98,22 +98,42 @@ class PipeConnection:
         """
         with self._lock:
             # Send action
+            action_type = action.get("type", "unknown")
+            action_kind = action.get("action", {}).get("kind", "unknown") if isinstance(action.get("action"), dict) else "unknown"
+            self._log.info(f"Sending action to DLL: type={action_type}, kind={action_kind}")
+            
             message = json.dumps(action).encode("utf-8")
             self._write(message)
 
             # Read response
             response_data = self._read()
             if response_data is None:
+                self._log.error("Failed to read response from DLL")
                 return {"error": "Pipe read failed"}
 
+            # Log raw response receipt
+            self._log.info(f"Received response from DLL: {len(response_data)} bytes")
+
             try:
-                return json.loads(response_data.decode("utf-8"))
+                response = json.loads(response_data.decode("utf-8"))
+                # Log parsed response details
+                resp_type = response.get("type", "unknown") if isinstance(response, dict) else "non-dict"
+                resp_info = f"type={resp_type}"
+                if isinstance(response, dict):
+                    if "request_id" in response:
+                        resp_info += f", request_id={response['request_id']}"
+                    if "success" in response:
+                        resp_info += f", success={response['success']}"
+                self._log.info(f"Parsed response from DLL: {resp_info}")
+                return response
             except json.JSONDecodeError as e:
+                self._log.error(f"Invalid JSON response: {e}, raw data: {response_data[:100]!r}")
                 return {"error": f"Invalid JSON response: {e}"}
 
     def send_end_turn(self) -> None:
         """Send end_turn signal to DLL (no response expected)."""
         with self._lock:
+            self._log.info("Sending end_turn signal to DLL")
             message = json.dumps({"type": "end_turn"}).encode("utf-8")
             self._write(message)
 
@@ -148,9 +168,9 @@ class NamedPipeServer:
 
     When DLL sends a turn_start message:
     1. Parses the state
-    2. Calls on_turn_start(state, pipe_connection)
+    2. Calls on_turn_start(state, pipe_connection) in a separate thread
     3. Handler can use pipe_connection to send actions and receive responses
-    4. When handler returns, server waits for next message
+    4. Pipe reading continues immediately, allowing new messages to be processed
     """
 
     def __init__(self, pipe_name: str, on_turn_start: OnTurnStart):
@@ -161,6 +181,8 @@ class NamedPipeServer:
         self._running = False
         self._log = get_logger()
         self._handle: Optional[int] = None
+        self._current_handler_thread: Optional[threading.Thread] = None
+        self._handler_lock = threading.Lock()
 
     def start(self) -> None:
         if self._running:
@@ -255,15 +277,41 @@ class NamedPipeServer:
             self._dispatch(data, pipe_conn)
 
     def _dispatch(self, data: bytes, pipe_conn: PipeConnection) -> None:
+        # Log raw message receipt
+        # self._log.info(f"Received message from DLL: {len(data)} bytes")
+        
         try:
             decoded = data.decode("utf-8").rstrip("\r\n")
             state = json.loads(decoded)
         except (UnicodeDecodeError, json.JSONDecodeError) as e:
-            self._log.error(f"Failed to parse message: {e}")
+            self._log.error(f"Failed to parse message: {e}, raw data: {data[:100]!r}")
             return
 
-        try:
-            # Call handler - it can use pipe_conn to send actions
-            self.on_turn_start(state, pipe_conn)
-        except Exception as e:
-            self._log.error(f"Handler error: {e}")
+        # Log parsed message details
+        msg_type = state.get("type", "unknown") if isinstance(state, dict) else "non-dict"
+        msg_info = f"type={msg_type}"
+        if isinstance(state, dict):
+            if "turn" in state:
+                msg_info += f", turn={state['turn']}"
+            if "player_id" in state:
+                msg_info += f", player_id={state['player_id']}"
+        self._log.info(f"Parsed message from DLL: {msg_info}")
+
+        # Run handler in separate thread so pipe reading can continue
+        # This allows new messages to be processed even if handler is blocking
+        def run_handler():
+            try:
+                self.on_turn_start(state, pipe_conn)
+            except Exception as e:
+                self._log.error(f"Handler error: {e}", exc_info=True)
+            finally:
+                # Clear handler thread reference when done
+                with self._handler_lock:
+                    if self._current_handler_thread == threading.current_thread():
+                        self._current_handler_thread = None
+
+        handler_thread = threading.Thread(target=run_handler, daemon=True, name=f"TurnHandler-{state.get('turn', '?')}")
+        with self._handler_lock:
+            self._current_handler_thread = handler_thread
+        handler_thread.start()
+        self._log.debug(f"Started handler thread for turn {state.get('turn', '?')}")

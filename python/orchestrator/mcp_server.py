@@ -114,11 +114,27 @@ class CivMCPServer:
     def start_turn(self, state: dict[str, Any], pipe_conn: "PipeConnection") -> None:
         """Start a new turn with the given game state and pipe connection.
 
+        If a turn is already active, it will be cancelled (e.g., user manually advanced turn).
+
         Args:
             state: Game state from DLL
             pipe_conn: PipeConnection for sending actions to DLL
         """
         with self._lock:
+            # If there's an active turn, cancel it (new turn_start arrived)
+            if self._turn_active:
+                old_turn = self.current_state.get("turn", "?") if self.current_state else "?"
+                new_turn = state.get("turn", "?")
+                if new_turn > old_turn:
+                    logger.warning(f"New turn_start received (turn {new_turn}) while turn {old_turn} was active - cancelling previous turn")
+                    self._turn_ended.set()  # Cancel the wait
+                elif new_turn < old_turn:
+                    logger.warning(f"New turn_start received (turn {new_turn}) while turn {old_turn} was active - ignoring (turn already advanced)")
+                    return
+                else:
+                    logger.warning(f"New turn_start received (turn {new_turn}) while turn {old_turn} was active - ignoring (same turn)")
+                    return
+            
             self.current_state = state
             self._pipe_conn = pipe_conn
             self._turn_notes = ""
