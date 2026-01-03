@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import ctypes
+import json
+import threading
 from ctypes import wintypes
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from .logging_setup import get_logger
 
@@ -71,22 +73,91 @@ class WinAPI:
     CloseHandle.argtypes = [wintypes.HANDLE]
     CloseHandle.restype = wintypes.BOOL
 
+    CancelIoEx = kernel32.CancelIoEx
+    CancelIoEx.argtypes = [wintypes.HANDLE, ctypes.c_void_p]
+    CancelIoEx.restype = wintypes.BOOL
 
-OnMessage = Callable[[bytes], Optional[bytes]]
+
+class PipeConnection:
+    """Thread-safe wrapper for pipe I/O during a turn.
+
+    Allows the HTTP thread to send actions and receive responses
+    while the pipe thread waits.
+    """
+
+    def __init__(self, handle: int):
+        self._handle = handle
+        self._lock = threading.Lock()
+        self._log = get_logger()
+        self._buf = (ctypes.c_char * WinAPI.BUFSIZE)()
+
+    def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
+        """Send an action to the DLL and wait for response.
+
+        Thread-safe: can be called from HTTP handler thread.
+        """
+        with self._lock:
+            # Send action
+            message = json.dumps(action).encode("utf-8")
+            self._write(message)
+
+            # Read response
+            response_data = self._read()
+            if response_data is None:
+                return {"error": "Pipe read failed"}
+
+            try:
+                return json.loads(response_data.decode("utf-8"))
+            except json.JSONDecodeError as e:
+                return {"error": f"Invalid JSON response: {e}"}
+
+    def send_end_turn(self) -> None:
+        """Send end_turn signal to DLL (no response expected)."""
+        with self._lock:
+            message = json.dumps({"type": "end_turn"}).encode("utf-8")
+            self._write(message)
+
+    def _write(self, data: bytes) -> bool:
+        bytes_written = wintypes.DWORD(0)
+        ok = WinAPI.WriteFile(self._handle, data, len(data), ctypes.byref(bytes_written), None)
+        if not ok or bytes_written.value != len(data):
+            err = ctypes.get_last_error()
+            self._log.error(f"Pipe write failed: {err}")
+            return False
+        return True
+
+    def _read(self) -> Optional[bytes]:
+        bytes_read = wintypes.DWORD(0)
+        ok = WinAPI.ReadFile(self._handle, self._buf, WinAPI.BUFSIZE, ctypes.byref(bytes_read), None)
+        if not ok:
+            err = ctypes.get_last_error()
+            if err != WinAPI.ERROR_MORE_DATA:
+                self._log.error(f"Pipe read failed: {err}")
+                return None
+        if bytes_read.value == 0:
+            return None
+        return bytes(self._buf[:bytes_read.value])
+
+
+# Callback type: receives state dict and pipe connection for sending actions
+OnTurnStart = Callable[[dict[str, Any], PipeConnection], None]
 
 
 class NamedPipeServer:
-    """Single-client named-pipe server (message mode).
+    """Single-client named-pipe server for turn-based communication.
 
-    Accepts one client at a time, processes messages synchronously with
-    an `on_message` callback, and optionally replies per message.
+    When DLL sends a turn_start message:
+    1. Parses the state
+    2. Calls on_turn_start(state, pipe_connection)
+    3. Handler can use pipe_connection to send actions and receive responses
+    4. When handler returns, server waits for next message
     """
 
-    def __init__(self, pipe_name: str, on_message: OnMessage):
+    def __init__(self, pipe_name: str, on_turn_start: OnTurnStart):
         if not pipe_name.startswith("\\\\.\\pipe\\"):
             raise ValueError("pipe_name must start with \\\\.\\pipe\\")
         self.pipe_name = pipe_name
-        self.on_message = on_message
+        self.on_turn_start = on_turn_start
         self._running = False
         self._log = get_logger()
         self._handle: Optional[int] = None
@@ -99,6 +170,11 @@ class NamedPipeServer:
 
     def stop(self) -> None:
         self._running = False
+        if self._handle:
+            try:
+                WinAPI.CancelIoEx(self._handle, None)
+            except Exception:
+                pass
         self._close()
 
     def _create(self) -> int:
@@ -147,7 +223,6 @@ class NamedPipeServer:
                         self._log.error(f"ConnectNamedPipe failed: {err}")
                         self._close()
                         continue
-                # Ensure message read mode (should already be set by creation flags)
                 mode = wintypes.DWORD(WinAPI.PIPE_READMODE_MESSAGE)
                 WinAPI.SetNamedPipeHandleState(h, ctypes.byref(mode), None, None)
                 self._log.info("Client connected")
@@ -159,36 +234,36 @@ class NamedPipeServer:
     def _client_loop(self, h: int) -> None:
         buf = (ctypes.c_char * WinAPI.BUFSIZE)()
         bytes_read = wintypes.DWORD(0)
+        pipe_conn = PipeConnection(h)
+
         while self._running:
+            # Wait for message from DLL (turn_start)
             ok = WinAPI.ReadFile(h, buf, WinAPI.BUFSIZE, ctypes.byref(bytes_read), None)
             if not ok:
                 err = ctypes.get_last_error()
                 if err == WinAPI.ERROR_MORE_DATA:
-                    # Message larger than buffer; read the remainder next
-                    chunk = bytes(buf[: bytes_read.value])
-                    self._dispatch(h, chunk)
+                    chunk = bytes(buf[:bytes_read.value])
+                    self._dispatch(chunk, pipe_conn)
                     continue
                 self._log.info(f"Client disconnected or read error: {err}")
                 break
             if bytes_read.value == 0:
                 self._log.info("Client closed pipe")
                 break
-            data = bytes(buf[: bytes_read.value])
-            self._dispatch(h, data)
 
-    def _dispatch(self, h: int, data: bytes) -> None:
+            data = bytes(buf[:bytes_read.value])
+            self._dispatch(data, pipe_conn)
+
+    def _dispatch(self, data: bytes, pipe_conn: PipeConnection) -> None:
         try:
-            reply = self.on_message(data)
+            decoded = data.decode("utf-8").rstrip("\r\n")
+            state = json.loads(decoded)
+        except (UnicodeDecodeError, json.JSONDecodeError) as e:
+            self._log.error(f"Failed to parse message: {e}")
+            return
+
+        try:
+            # Call handler - it can use pipe_conn to send actions
+            self.on_turn_start(state, pipe_conn)
         except Exception as e:
             self._log.error(f"Handler error: {e}")
-            reply = None
-        if reply:
-            self._write(h, reply)
-
-    def _write(self, h: int, data: bytes) -> None:
-        bytes_written = wintypes.DWORD(0)
-        ok = WinAPI.WriteFile(h, data, len(data), ctypes.byref(bytes_written), None)
-        if not ok or bytes_written.value != len(data):
-            err = ctypes.get_last_error()
-            self._log.error(f"Write failed: {err}")
-

@@ -4,115 +4,50 @@ Civ V LLM Orchestrator
 Bridges the Civ V DLL (named pipe) and LLM control.
 
 Modes:
-- --mcp: Turn-based MCP mode. LLM connects via HTTP, makes decisions, calls end_turn.
-- --debug: Display pipe messages without processing (for debugging)
-- --dashboard: Start the Flask monitoring dashboard
+- Default: MCP mode - creates pipe, waits for DLL, LLM controls via HTTP
+- --debug: Display pipe messages without processing (for troubleshooting)
+- --dashboard: Add the Flask monitoring dashboard
 """
 from __future__ import annotations
 
 import argparse
-import io
-import json
 import os
 import sys
-import time
 from threading import Thread
-from typing import Optional
+from typing import TYPE_CHECKING, Any
 
-from .formatting import format_message
+from .formatting import format_game_state
 from .mcp_http_server import MCPHTTPServer
 from .pipe_server import NamedPipeServer
 
-
-class Transport:
-    """Abstract transport for DLL communication."""
-
-    def read_line(self) -> Optional[str]:
-        raise NotImplementedError
-
-    def write_line(self, s: str) -> None:
-        raise NotImplementedError
+if TYPE_CHECKING:
+    from .pipe_server import PipeConnection
 
 
-class StdIOTransport(Transport):
-    """Transport using stdin/stdout (for testing)."""
-
-    def __init__(self):
-        self.reader = sys.stdin
-        self.writer = sys.stdout
-
-    def read_line(self) -> Optional[str]:
-        return self.reader.readline()
-
-    def write_line(self, s: str) -> None:
-        self.writer.write(s)
-        if not s.endswith("\n"):
-            self.writer.write("\n")
-        self.writer.flush()
-
-
-class WindowsPipeTransport(Transport):
-    """Transport using Windows named pipe (connects to existing pipe)."""
-
-    def __init__(self, pipe_name: str, retry_seconds: float = 0.5, timeout: float = 30.0):
-        self.pipe_name = pipe_name
-        deadline = time.time() + timeout
-        last_err: Optional[Exception] = None
-        fh: Optional[io.BufferedRandom] = None
-
-        while time.time() < deadline:
-            try:
-                raw = open(pipe_name, mode="r+b", buffering=0)
-                fh = io.BufferedRandom(raw)
-                break
-            except Exception as e:
-                last_err = e
-                time.sleep(retry_seconds)
-
-        if fh is None:
-            raise RuntimeError(f"Failed to open pipe {pipe_name}: {last_err}")
-        self.fh = fh
-
-    def read_line(self) -> Optional[str]:
-        data = self.fh.readline()
-        if not data:
-            return None
-        try:
-            return data.decode("utf-8")
-        except Exception:
-            return data.decode("utf-8", errors="replace")
-
-    def write_line(self, s: str) -> None:
-        if not s.endswith("\n"):
-            s = s + "\n"
-        self.fh.write(s.encode("utf-8"))
-        self.fh.flush()
-
-
-DEFAULT_DEBUG_PIPE = r"\\.\pipe\CivVPGameState"
 DEFAULT_PIPE = r"\\.\pipe\civv_llm"
 
 
 def run_debug_server(pipe_path: str, raw_mode: bool = False) -> None:
-    """Run a debug pipe server that displays incoming messages."""
+    """Run a debug pipe server that displays incoming messages (read-only)."""
+    import json
+
     print("=" * 60)
-    print("Civ V LLM Bridge - Debug Mode")
+    print("Civ V LLM Bridge - Debug Mode (read-only)")
     print("=" * 60)
     print(f"Pipe: {pipe_path}")
     print(f"Mode: {'raw JSON' if raw_mode else 'formatted'}")
+    print("Waiting for DLL to connect...")
     print("=" * 60)
     print()
 
-    def on_message(data: bytes) -> Optional[bytes]:
-        try:
-            decoded = data.decode("utf-8").rstrip("\r\n")
-        except UnicodeDecodeError:
-            decoded = data.hex()
-        output = format_message(decoded, raw_mode=raw_mode)
-        print(output, flush=True)
-        return None
+    def on_turn_start(state: dict[str, Any], pipe_conn: "PipeConnection") -> None:
+        if raw_mode:
+            print(json.dumps(state, indent=2), flush=True)
+        else:
+            print(format_game_state(state), flush=True)
+        # Debug mode: don't send any actions, just display
 
-    server = NamedPipeServer(pipe_path, on_message)
+    server = NamedPipeServer(pipe_path, on_turn_start)
     try:
         server.start()
     except KeyboardInterrupt:
@@ -121,28 +56,28 @@ def run_debug_server(pipe_path: str, raw_mode: bool = False) -> None:
 
 
 def run_mcp_mode(
-    transport: Transport,
+    pipe_path: str,
     mcp_host: str,
     mcp_port: int,
     turn_timeout: float,
     once: bool = False,
-    dashboard_host: Optional[str] = None,
+    dashboard_host: str | None = None,
     dashboard_port: int = 5000,
 ) -> None:
     """Run in MCP mode: LLM controls the game via HTTP tool calls.
 
-    Flow per turn:
-    1. Receive state from DLL
-    2. Start turn (expose state to LLM via MCP)
-    3. Wait for LLM to call end_turn (or timeout)
-    4. Send queued actions back to DLL
+    Sequential flow per turn:
+    1. DLL sends turn_start with state
+    2. Orchestrator exposes state to LLM via MCP HTTP server
+    3. LLM sends actions one at a time, each goes to DLL immediately
+    4. LLM calls end_turn when done
+    5. DLL advances to next turn
     """
     # Start MCP HTTP server
     mcp_server = MCPHTTPServer(mcp_host, mcp_port, turn_timeout=turn_timeout)
     mcp_server.start()
 
-    print(f"[orchestrator] MCP mode active", file=sys.stderr)
-    print(f"[orchestrator] LLM endpoint: http://{mcp_host}:{mcp_port}/tool", file=sys.stderr)
+    print(f"[orchestrator] MCP server: http://{mcp_host}:{mcp_port}/tool", file=sys.stderr)
     print(f"[orchestrator] Turn timeout: {turn_timeout}s", file=sys.stderr)
 
     # Start dashboard if requested
@@ -153,7 +88,6 @@ def run_mcp_mode(
         app = create_dashboard_app(mcp_server.mcp_server)
 
         def run_dashboard():
-            # Suppress Flask's default logging for cleaner output
             import logging
             log = logging.getLogger("werkzeug")
             log.setLevel(logging.WARNING)
@@ -163,122 +97,109 @@ def run_mcp_mode(
         dashboard_thread.start()
         print(f"[orchestrator] Dashboard: http://{dashboard_host}:{dashboard_port}", file=sys.stderr)
 
+    print(f"[orchestrator] Pipe: {pipe_path}", file=sys.stderr)
+    print(f"[orchestrator] Waiting for DLL to connect...", file=sys.stderr)
+
+    def on_turn_start(state: dict[str, Any], pipe_conn: "PipeConnection") -> None:
+        """Called when DLL sends turn_start. Blocks until LLM calls end_turn."""
+        turn_num = state.get("turn", "?")
+        print(f"[orchestrator] Turn {turn_num}: received state, waiting for LLM...", file=sys.stderr)
+
+        # Start turn - expose state and pipe connection to MCP server
+        mcp_server.mcp_server.start_turn(state, pipe_conn)
+
+        # Wait for LLM to call end_turn (blocks here)
+        ended_normally = mcp_server.mcp_server.wait_for_turn_end()
+
+        if not ended_normally:
+            print(f"[orchestrator] Turn {turn_num}: TIMEOUT", file=sys.stderr)
+        else:
+            print(f"[orchestrator] Turn {turn_num}: completed", file=sys.stderr)
+
+    # Create pipe server and run in background thread
+    pipe_server = NamedPipeServer(pipe_path, on_turn_start)
+
+    pipe_thread = Thread(target=pipe_server.start, daemon=True)
+    pipe_thread.start()
+
+    # Main thread waits for Ctrl+C
     try:
-        while True:
-            # 1. Read state from DLL
-            line = transport.read_line()
-            if line is None or line == "":
-                print("[orchestrator] Pipe closed", file=sys.stderr)
-                break
-
-            line = line.strip()
-            if not line:
-                continue
-
-            try:
-                state = json.loads(line)
-            except json.JSONDecodeError as e:
-                err = {"error": "invalid_json", "detail": str(e)}
-                transport.write_line(json.dumps(err))
-                continue
-
-            turn_num = state.get("data", {}).get("turn", "?")
-            print(f"[orchestrator] Turn {turn_num}: waiting for LLM...", file=sys.stderr)
-
-            # 2. Start turn - expose state to LLM
-            mcp_server.start_turn(state)
-
-            # 3. Wait for LLM to call end_turn
-            ended_normally = mcp_server.wait_for_turn_end()
-
-            # 4. Get queued actions
-            actions, notes = mcp_server.get_turn_result()
-
-            if not ended_normally:
-                notes = f"TIMEOUT - {notes}" if notes else "TIMEOUT"
-
-            # 5. Build response for DLL
-            response = {
-                "turn": turn_num,
-                "actions": actions,
-                "notes": notes,
-            }
-
-            print(f"[orchestrator] Turn {turn_num}: sending {len(actions)} actions", file=sys.stderr)
-            transport.write_line(json.dumps(response))
-
-            if once:
-                break
-
+        while pipe_thread.is_alive():
+            pipe_thread.join(timeout=0.5)
     except KeyboardInterrupt:
-        print("\n[orchestrator] Interrupted", file=sys.stderr)
+        print("\n[orchestrator] Shutting down...", file=sys.stderr)
     finally:
+        pipe_server.stop()
         mcp_server.stop()
+
+
+def run_standalone_dashboard(host: str, port: int) -> None:
+    """Run just the dashboard without pipe/MCP (for UI testing)."""
+    from .dashboard import run_dashboard
+
+    print(f"[orchestrator] Standalone dashboard mode", file=sys.stderr)
+    print(f"[orchestrator] Note: MCP commands will fail (no MCP server)", file=sys.stderr)
+    run_dashboard(host=host, port=port)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Civ V LLM Orchestrator - bridges DLL and LLM via MCP"
     )
-    parser.add_argument("--pipe", help="Named pipe path")
-    parser.add_argument("--stdio", action="store_true", help="Use stdin/stdout (testing)")
-    parser.add_argument("--once", action="store_true", help="Process one turn then exit")
+
+    # Pipe options
+    parser.add_argument("--pipe", default=DEFAULT_PIPE,
+                        help=f"Named pipe path (default: {DEFAULT_PIPE})")
+    parser.add_argument("--once", action="store_true",
+                        help="Process one turn then exit")
 
     # MCP options
-    parser.add_argument("--mcp", action="store_true", help="Run in MCP mode (LLM via HTTP)")
-    parser.add_argument("--mcp-host", default="localhost", help="MCP server host")
-    parser.add_argument("--mcp-port", type=int, default=8765, help="MCP server port")
+    parser.add_argument("--mcp-host", default="localhost",
+                        help="MCP server host (default: localhost)")
+    parser.add_argument("--mcp-port", type=int, default=8765,
+                        help="MCP server port (default: 8765)")
     parser.add_argument("--turn-timeout", type=float, default=300.0,
                         help="Max seconds to wait for LLM per turn (default: 300)")
 
-    # Debug options
-    parser.add_argument("--debug", action="store_true", help="Debug mode: display messages only")
-    parser.add_argument("--raw", action="store_true", help="In debug mode, show raw JSON")
-
     # Dashboard options
-    parser.add_argument("--dashboard", action="store_true", help="Start the monitoring dashboard")
-    parser.add_argument("--dashboard-host", default="0.0.0.0", help="Dashboard host (default: 0.0.0.0)")
-    parser.add_argument("--dashboard-port", type=int, default=5000, help="Dashboard port (default: 5000)")
+    parser.add_argument("--dashboard", action="store_true",
+                        help="Start the monitoring dashboard")
+    parser.add_argument("--dashboard-host", default="0.0.0.0",
+                        help="Dashboard host (default: 0.0.0.0)")
+    parser.add_argument("--dashboard-port", type=int, default=5000,
+                        help="Dashboard port (default: 5000)")
+    parser.add_argument("--dashboard-only", action="store_true",
+                        help="Run only the dashboard (for UI testing)")
+
+    # Debug options
+    parser.add_argument("--debug", action="store_true",
+                        help="Debug mode: display messages only (read-only)")
+    parser.add_argument("--raw", action="store_true",
+                        help="In debug mode, show raw JSON")
 
     args = parser.parse_args()
 
-    # Debug mode
+    # Standalone dashboard mode
+    if args.dashboard_only:
+        run_standalone_dashboard(args.dashboard_host, args.dashboard_port)
+        return
+
+    # Debug mode (read-only viewer)
     if args.debug:
-        pipe = args.pipe or DEFAULT_DEBUG_PIPE
-        run_debug_server(pipe, raw_mode=args.raw)
+        run_debug_server(args.pipe, raw_mode=args.raw)
         return
 
-    # Standalone dashboard mode (no pipe connection)
-    if args.dashboard and args.stdio:
-        from .dashboard import run_dashboard
-
-        print(f"[orchestrator] Starting standalone dashboard on port {args.dashboard_port}", file=sys.stderr)
-        run_dashboard(host=args.dashboard_host, port=args.dashboard_port)
-        return
-
-    # Set up transport
-    if args.stdio:
-        transport: Transport = StdIOTransport()
-        print("[orchestrator] Using stdio transport", file=sys.stderr)
-    else:
-        pipe = args.pipe or os.environ.get("CIVV_PIPE") or DEFAULT_PIPE
-        transport = WindowsPipeTransport(pipe)
-        print(f"[orchestrator] Connected to pipe: {pipe}", file=sys.stderr)
-
-    # MCP mode (default and only real mode now)
-    if args.mcp or True:  # Always MCP mode for now
-        run_mcp_mode(
-            transport=transport,
-            mcp_host=args.mcp_host,
-            mcp_port=args.mcp_port,
-            turn_timeout=args.turn_timeout,
-            once=args.once,
-            dashboard_host=args.dashboard_host if args.dashboard else None,
-            dashboard_port=args.dashboard_port,
-        )
-    else:
-        print("[orchestrator] Error: --mcp mode required", file=sys.stderr)
-        sys.exit(1)
+    # Default: MCP mode
+    pipe = args.pipe or os.environ.get("CIVV_PIPE") or DEFAULT_PIPE
+    run_mcp_mode(
+        pipe_path=pipe,
+        mcp_host=args.mcp_host,
+        mcp_port=args.mcp_port,
+        turn_timeout=args.turn_timeout,
+        once=args.once,
+        dashboard_host=args.dashboard_host if args.dashboard else None,
+        dashboard_port=args.dashboard_port,
+    )
 
 
 if __name__ == "__main__":

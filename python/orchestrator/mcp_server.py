@@ -2,19 +2,22 @@
 MCP Server for Civilization V LLM Orchestrator
 
 Provides tools for LLMs to:
-- Query game state (cached, no DLL roundtrip)
-- Send commands to queue for the DLL
+- Query game state (cached from turn start)
+- Send actions immediately to the DLL (synchronous, with response)
 - End their turn when done deciding
 
-The orchestrator waits for the LLM to call end_turn before
-sending queued actions to the DLL.
+Each action is sent immediately to the DLL and the response is returned
+to the LLM, allowing it to see the result before deciding the next action.
 """
 
 import logging
 import threading
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from .formatting import format_game_state
+
+if TYPE_CHECKING:
+    from .pipe_server import PipeConnection
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +31,8 @@ AVAILABLE_TOOLS = [
     },
     {
         "name": "send_action",
-        "description": "Queue an action/command for this turn.",
-        "parameters": ["action", "notes"],
-    },
-    {
-        "name": "send_actions",
-        "description": "Queue multiple actions at once.",
-        "parameters": ["actions", "notes"],
+        "description": "Send an action to the game immediately and get the result.",
+        "parameters": ["action"],
     },
     {
         "name": "get_cities",
@@ -78,21 +76,21 @@ AVAILABLE_TOOLS = [
     },
     {
         "name": "end_turn",
-        "description": "Signal that you are done with your turn. All queued actions will be sent to the game.",
+        "description": "Signal that you are done with your turn.",
         "parameters": ["notes"],
     },
 ]
 
 
 class CivMCPServer:
-    """Tool executor that bridges LLM requests to Civ V game state.
+    """Tool executor that bridges LLM requests to Civ V game.
 
-    Turn-based flow:
-    1. Orchestrator calls start_turn(state) when DLL signals LLM's turn
-    2. LLM queries state and queues actions via tools
-    3. LLM calls end_turn when done
-    4. Orchestrator calls wait_for_turn_end() which blocks until end_turn
-    5. Orchestrator gets queued actions and sends to DLL
+    Sequential turn flow:
+    1. Orchestrator calls start_turn(state, pipe_connection)
+    2. LLM queries state and sends actions via tools
+    3. Each action is sent immediately to DLL, response returned to LLM
+    4. LLM calls end_turn when done
+    5. Orchestrator resumes, signals DLL to advance turn
     """
 
     def __init__(self, turn_timeout: float = 300.0):
@@ -102,8 +100,10 @@ class CivMCPServer:
             turn_timeout: Max seconds to wait for LLM to end turn (default 5 min)
         """
         self.current_state: Optional[dict[str, Any]] = None
-        self.pending_actions: list[dict[str, Any]] = []
         self.turn_timeout = turn_timeout
+
+        # Pipe connection for sending actions (set during turn)
+        self._pipe_conn: Optional["PipeConnection"] = None
 
         # Turn management
         self._turn_active = False
@@ -111,19 +111,21 @@ class CivMCPServer:
         self._turn_notes: str = ""
         self._lock = threading.Lock()
 
-    def start_turn(self, state: dict[str, Any]) -> None:
-        """Start a new turn with the given game state.
+    def start_turn(self, state: dict[str, Any], pipe_conn: "PipeConnection") -> None:
+        """Start a new turn with the given game state and pipe connection.
 
-        Called by orchestrator when DLL signals it's the LLM's turn.
+        Args:
+            state: Game state from DLL
+            pipe_conn: PipeConnection for sending actions to DLL
         """
         with self._lock:
             self.current_state = state
-            self.pending_actions.clear()
+            self._pipe_conn = pipe_conn
             self._turn_notes = ""
             self._turn_ended.clear()
             self._turn_active = True
 
-        turn_num = state.get("data", {}).get("turn", "?")
+        turn_num = state.get("turn", "?")
         logger.info(f"Turn {turn_num} started - waiting for LLM decisions")
 
     def wait_for_turn_end(self, timeout: Optional[float] = None) -> bool:
@@ -140,23 +142,17 @@ class CivMCPServer:
 
         with self._lock:
             self._turn_active = False
+            self._pipe_conn = None
 
         if not ended:
             logger.warning(f"Turn timed out after {wait_time}s")
 
         return ended
 
-    def get_turn_result(self) -> tuple[list[dict[str, Any]], str]:
-        """Get the actions and notes from the completed turn.
-
-        Returns:
-            Tuple of (actions_list, notes_string)
-        """
+    def get_turn_notes(self) -> str:
+        """Get notes from the completed turn."""
         with self._lock:
-            actions = self.pending_actions[:]
-            self.pending_actions.clear()
-            notes = self._turn_notes
-        return actions, notes
+            return self._turn_notes
 
     def execute_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute a tool and return results."""
@@ -168,16 +164,7 @@ class CivMCPServer:
             )
 
         elif name == "send_action":
-            return self._send_action(
-                action=arguments.get("action", {}),
-                notes=arguments.get("notes", "")
-            )
-
-        elif name == "send_actions":
-            return self._send_actions(
-                actions=arguments.get("actions", []),
-                notes=arguments.get("notes", "")
-            )
+            return self._send_action(action=arguments.get("action", {}))
 
         elif name == "get_cities":
             return self._get_cities(city_id=arguments.get("city_id"))
@@ -209,6 +196,31 @@ class CivMCPServer:
         else:
             return {"error": f"Unknown tool: {name}"}
 
+    def _send_action(self, action: dict[str, Any]) -> dict[str, Any]:
+        """Send an action to the DLL immediately and return the response."""
+        with self._lock:
+            if not self._turn_active:
+                return {"error": "Cannot send action - no active turn"}
+            pipe_conn = self._pipe_conn
+
+        if not pipe_conn:
+            return {"error": "No pipe connection available"}
+
+        logger.info(f"Sending action to DLL: {action}")
+
+        # Send action and get response synchronously
+        response = pipe_conn.send_action({"type": "action", "action": action})
+
+        logger.info(f"DLL response: {response}")
+
+        # Update current state if response includes updated state
+        if "state" in response:
+            with self._lock:
+                if self.current_state:
+                    self.current_state["state"] = response["state"]
+
+        return response
+
     def _end_turn(self, notes: str = "") -> dict[str, Any]:
         """Signal that the LLM is done with its turn."""
         with self._lock:
@@ -216,13 +228,18 @@ class CivMCPServer:
                 return {"error": "No active turn to end"}
 
             self._turn_notes = notes
-            action_count = len(self.pending_actions)
-            self._turn_ended.set()
+            pipe_conn = self._pipe_conn
 
-        logger.info(f"Turn ended by LLM with {action_count} queued actions")
+        # Send end_turn to DLL
+        if pipe_conn:
+            pipe_conn.send_end_turn()
+
+        # Signal orchestrator that turn is done
+        self._turn_ended.set()
+
+        logger.info(f"Turn ended by LLM")
         return {
             "status": "turn_ended",
-            "actions_queued": action_count,
             "notes": notes
         }
 
@@ -231,7 +248,7 @@ class CivMCPServer:
         if not self.current_state:
             return {"error": "No game state available - not your turn yet"}
 
-        state = self.current_state.get("data", {})
+        state = self.current_state.get("state", {})
 
         if category:
             if category in state:
@@ -245,44 +262,12 @@ class CivMCPServer:
 
         return state
 
-    def _send_action(self, action: dict[str, Any], notes: str = "") -> dict[str, Any]:
-        """Queue a single action to be sent to the game."""
-        with self._lock:
-            if not self._turn_active:
-                return {"error": "Cannot queue actions - no active turn"}
-            self.pending_actions.append(action)
-            count = len(self.pending_actions)
-
-        logger.info(f"Action queued: {action}")
-        return {
-            "status": "queued",
-            "action": action,
-            "notes": notes,
-            "total_pending": count
-        }
-
-    def _send_actions(self, actions: list[dict[str, Any]], notes: str = "") -> dict[str, Any]:
-        """Queue multiple actions to be sent to the game."""
-        with self._lock:
-            if not self._turn_active:
-                return {"error": "Cannot queue actions - no active turn"}
-            self.pending_actions.extend(actions)
-            count = len(self.pending_actions)
-
-        logger.info(f"{len(actions)} actions queued")
-        return {
-            "status": "queued",
-            "action_count": len(actions),
-            "notes": notes,
-            "total_pending": count
-        }
-
     def _get_cities(self, city_id: Optional[int] = None) -> dict[str, Any]:
         """Get city information."""
         if not self.current_state:
             return {"error": "No game state available"}
 
-        cities = self.current_state.get("data", {}).get("cities", [])
+        cities = self.current_state.get("state", {}).get("cities", [])
 
         if city_id is not None:
             city = next((c for c in cities if c.get("id") == city_id), None)
@@ -297,7 +282,7 @@ class CivMCPServer:
         if not self.current_state:
             return {"error": "No game state available"}
 
-        units = self.current_state.get("data", {}).get("units", [])
+        units = self.current_state.get("state", {}).get("units", [])
 
         if unit_id is not None:
             unit = next((u for u in units if u.get("id") == unit_id), None)
@@ -312,21 +297,21 @@ class CivMCPServer:
         if not self.current_state:
             return {"error": "No game state available"}
 
-        return self.current_state.get("data", {}).get("technology", {})
+        return self.current_state.get("state", {}).get("technology", {})
 
     def _get_diplomacy(self) -> dict[str, Any]:
         """Get diplomacy information."""
         if not self.current_state:
             return {"error": "No game state available"}
 
-        return self.current_state.get("data", {}).get("diplomacy", {})
+        return self.current_state.get("state", {}).get("diplomacy", {})
 
     def _get_available_choices(self) -> dict[str, Any]:
         """Get all pending choices/decisions."""
         if not self.current_state:
             return {"error": "No game state available"}
 
-        data = self.current_state.get("data", {})
+        data = self.current_state.get("state", {})
         choices = {}
 
         if data.get("needs_tech_choice"):
@@ -351,7 +336,7 @@ class CivMCPServer:
         if not self.current_state:
             return {"error": "No game state available"}
 
-        data = self.current_state.get("data", {})
+        data = self.current_state.get("state", {})
         return {
             "victory_conditions": data.get("victory_conditions", []),
             "victory_progress": data.get("victory_progress", {})
@@ -362,7 +347,7 @@ class CivMCPServer:
         if not self.current_state:
             return {"error": "No game state available"}
 
-        data = self.current_state.get("data", {})
+        data = self.current_state.get("state", {})
         return {
             "strategic": data.get("strategic_resources", {}),
             "luxury": data.get("luxury_resources", {}),
@@ -374,7 +359,7 @@ class CivMCPServer:
         if not self.current_state:
             return {"error": "No game state available"}
 
-        data = self.current_state.get("data", {})
+        data = self.current_state.get("state", {})
         formatted = format_game_state(data)
 
         if raw:
