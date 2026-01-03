@@ -6,3 +6,4 @@
 *.obj
 *.exe
 *.dll
+python/logs/*.log
