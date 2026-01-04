@@ -134,6 +134,11 @@ AVAILABLE_TOOLS = [
         "parameters": ["notes"],
     },
     {
+        "name": "forced_end_turn",
+        "description": "Force end the current turn (bypasses canEndTurn check).",
+        "parameters": ["notes"],
+    },
+    {
         "name": "get_notifications",
         "description": "Get unacknowledged notifications from the DLL.",
         "parameters": [],
@@ -354,6 +359,9 @@ class CivMCPServer:
         elif name == "end_turn":
             return self._end_turn(notes=arguments.get("notes", ""))
 
+        elif name == "forced_end_turn":
+            return self._forced_end_turn(notes=arguments.get("notes", ""))
+
         elif name == "get_notifications":
             return self._get_notifications()
 
@@ -467,32 +475,43 @@ class CivMCPServer:
             pipe_conn = self._pipe_conn
             current_turn = self._current_turn_number
 
-        # Send end_turn to DLL
-        send_success = False
+        # Send end_turn to DLL (fire and forget - don't block)
         if pipe_conn:
-            send_success = pipe_conn.send_end_turn()
-            if not send_success:
-                logger.error(f"Failed to send end_turn to DLL for turn {current_turn} - signaling turn end anyway to unblock orchestrator")
-        else:
-            logger.warning(f"No pipe connection available for turn {current_turn} - cannot send end_turn")
+            pipe_conn.send_end_turn()
 
         # Signal orchestrator that turn is done
-        # (We signal even if write failed to prevent orchestrator from hanging)
         self._turn_ended.set()
 
-        if send_success:
-            logger.info(f"Turn {current_turn} ended by LLM")
-            return {
-                "status": "turn_ended",
-                "notes": notes
-            }
-        else:
-            logger.warning(f"Turn {current_turn} ended by LLM but end_turn message may not have reached DLL")
-            return {
-                "status": "turn_ended",
-                "notes": notes,
-                "warning": "end_turn message may not have reached DLL"
-            }
+        logger.info(f"Turn {current_turn} ended by LLM")
+        return {
+            "status": "turn_ended",
+            "notes": notes
+        }
+
+    def _forced_end_turn(self, notes: str = "") -> dict[str, Any]:
+        """Force end the current turn (bypasses canEndTurn check)."""
+        with self._lock:
+            if not self._turn_active:
+                current_turn = self._current_turn_number
+                logger.warning(f"forced_end_turn called but no active turn (current_turn_number={current_turn})")
+                return {"error": "No active turn to end"}
+
+            self._turn_notes = notes
+            pipe_conn = self._pipe_conn
+            current_turn = self._current_turn_number
+
+        # Send forced_end_turn to DLL (fire and forget - don't block)
+        if pipe_conn:
+            pipe_conn.send_forced_end_turn()
+
+        # Signal orchestrator that turn is done
+        self._turn_ended.set()
+
+        logger.info(f"Turn {current_turn} force ended by LLM")
+        return {
+            "status": "turn_force_ended",
+            "notes": notes
+        }
 
     def _get_game_state(self, category: Optional[str] = None, format_type: str = "json") -> dict[str, Any]:
         """Get current game state, optionally filtered by category."""

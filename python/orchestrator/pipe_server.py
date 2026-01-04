@@ -134,19 +134,19 @@ class PipeConnection:
                 self._log.error(f"Invalid JSON response: {e}, raw data: {response_data[:100]!r}")
                 return {"error": f"Invalid JSON response: {e}"}
 
-    def send_end_turn(self) -> bool:
-        """Send end_turn signal to DLL (no response expected).
-        
-        Returns:
-            True if message was sent successfully, False otherwise
-        """
+    def send_end_turn(self) -> None:
+        """Send end_turn signal to DLL (no response expected)."""
         with self._lock:
             self._log.info("Sending end_turn signal to DLL")
             message = json.dumps({"type": "end_turn"}).encode("utf-8") + b"\n"
-            success = self._write(message)
-            if not success:
-                self._log.error("Failed to write end_turn to pipe")
-            return success
+            self._write(message)  # Fire and forget - don't block on errors
+
+    def send_forced_end_turn(self) -> None:
+        """Send forced_end_turn signal to DLL (no response expected)."""
+        with self._lock:
+            self._log.info("Sending forced_end_turn signal to DLL")
+            message = json.dumps({"type": "forced_end_turn"}).encode("utf-8") + b"\n"
+            self._write(message)  # Fire and forget - don't block on errors
 
     def _write(self, data: bytes) -> bool:
         bytes_written = wintypes.DWORD(0)
