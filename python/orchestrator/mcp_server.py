@@ -165,15 +165,13 @@ class CivMCPServer:
     def __init__(
         self,
         turn_timeout: float = 300.0,
-        state_db: Optional[Any] = None,
-        notification_handler: Optional[Any] = None
+        state_db: Optional[Any] = None
     ):
         """Initialize the MCP server.
 
         Args:
             turn_timeout: Max seconds to wait for LLM to end turn (default 5 min)
             state_db: Optional StateDatabase instance for persistence
-            notification_handler: Optional NotificationHandler instance
         """
         self.current_state: Optional[dict[str, Any]] = None
         self.turn_timeout = turn_timeout
@@ -193,9 +191,8 @@ class CivMCPServer:
         self._action_errors = 0
         self._last_action_time: Optional[float] = None
         
-        # State persistence and notifications
+        # State persistence
         self.state_db = state_db
-        self.notification_handler = notification_handler
 
     def start_turn(self, state: dict[str, Any], pipe_conn: "PipeConnection") -> None:
         """Start a new turn with the given game state and pipe connection.
@@ -471,17 +468,31 @@ class CivMCPServer:
             current_turn = self._current_turn_number
 
         # Send end_turn to DLL
+        send_success = False
         if pipe_conn:
-            pipe_conn.send_end_turn()
+            send_success = pipe_conn.send_end_turn()
+            if not send_success:
+                logger.error(f"Failed to send end_turn to DLL for turn {current_turn} - signaling turn end anyway to unblock orchestrator")
+        else:
+            logger.warning(f"No pipe connection available for turn {current_turn} - cannot send end_turn")
 
         # Signal orchestrator that turn is done
+        # (We signal even if write failed to prevent orchestrator from hanging)
         self._turn_ended.set()
 
-        logger.info(f"Turn {current_turn} ended by LLM")
-        return {
-            "status": "turn_ended",
-            "notes": notes
-        }
+        if send_success:
+            logger.info(f"Turn {current_turn} ended by LLM")
+            return {
+                "status": "turn_ended",
+                "notes": notes
+            }
+        else:
+            logger.warning(f"Turn {current_turn} ended by LLM but end_turn message may not have reached DLL")
+            return {
+                "status": "turn_ended",
+                "notes": notes,
+                "warning": "end_turn message may not have reached DLL"
+            }
 
     def _get_game_state(self, category: Optional[str] = None, format_type: str = "json") -> dict[str, Any]:
         """Get current game state, optionally filtered by category."""
