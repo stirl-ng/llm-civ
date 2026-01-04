@@ -21,7 +21,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .state_db import StateDatabase
-    from .notification_handler import NotificationHandler
 
 logger = logging.getLogger(__name__)
 
@@ -151,15 +150,13 @@ class MCPHTTPServer:
         host: str = "localhost",
         port: int = 8765,
         turn_timeout: float = 300.0,
-        state_db: Optional["StateDatabase"] = None,
-        notification_handler: Optional["NotificationHandler"] = None
+        state_db: Optional["StateDatabase"] = None
     ):
         self.host = host
         self.port = port
         self.mcp_server = CivMCPServer(
             turn_timeout=turn_timeout,
-            state_db=state_db,
-            notification_handler=notification_handler
+            state_db=state_db
         )
         self.http_server: Optional[HTTPServer] = None
         self.thread: Optional[Thread] = None

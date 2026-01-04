@@ -42,10 +42,12 @@ class StateDatabase:
             """)
             
             conn.execute("""
-                CREATE TABLE IF NOT EXISTS notifications (
+                CREATE TABLE IF NOT EXISTS game_notifications (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp REAL NOT NULL,
+                    turn INTEGER,
                     notification_type TEXT NOT NULL,
+                    title TEXT,
                     message TEXT NOT NULL,
                     data_json TEXT,
                     acknowledged BOOLEAN DEFAULT 0
@@ -66,7 +68,8 @@ class StateDatabase:
             # Indexes for faster queries
             conn.execute("CREATE INDEX IF NOT EXISTS idx_states_turn ON game_states(turn)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_states_timestamp ON game_states(timestamp)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_ack ON notifications(acknowledged)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_game_notifications_ack ON game_notifications(acknowledged)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_game_notifications_turn ON game_notifications(turn)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_actions_turn ON actions(turn)")
             
             conn.commit()
@@ -168,18 +171,22 @@ class StateDatabase:
                     for row in rows
                 ]
 
-    def add_notification(
+    def save_game_notification(
         self,
         notification_type: str,
         message: str,
+        title: Optional[str] = None,
+        turn: Optional[int] = None,
         data: Optional[dict[str, Any]] = None
     ) -> int:
-        """Add a notification for the LLM.
+        """Save a game notification from the DLL.
         
         Args:
-            notification_type: Type of notification (e.g., "turn_start", "error", "warning")
-            message: Human-readable message
-            data: Optional additional data
+            notification_type: Type of notification (e.g., "city_growth", "unit_needs_orders")
+            message: Notification message text
+            title: Optional notification title
+            turn: Turn number when notification occurred
+            data: Optional additional notification data
             
         Returns:
             Notification ID
@@ -190,16 +197,17 @@ class StateDatabase:
         with self._lock:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.execute("""
-                    INSERT INTO notifications (timestamp, notification_type, message, data_json)
-                    VALUES (?, ?, ?, ?)
-                """, (timestamp, notification_type, message, data_json))
+                    INSERT INTO game_notifications 
+                    (timestamp, turn, notification_type, title, message, data_json)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (timestamp, turn, notification_type, title, message, data_json))
                 conn.commit()
                 row_id = cursor.lastrowid
-                logger.info(f"Added notification: {notification_type} - {message}")
+                logger.info(f"Saved game notification: {notification_type} - {message}")
                 return row_id
 
     def get_unacknowledged_notifications(self) -> list[dict[str, Any]]:
-        """Get all unacknowledged notifications.
+        """Get all unacknowledged game notifications.
         
         Returns:
             List of notification dictionaries
@@ -208,8 +216,8 @@ class StateDatabase:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute("""
-                    SELECT id, timestamp, notification_type, message, data_json
-                    FROM notifications 
+                    SELECT id, timestamp, turn, notification_type, title, message, data_json
+                    FROM game_notifications 
                     WHERE acknowledged = 0
                     ORDER BY timestamp ASC
                 """)
@@ -218,7 +226,9 @@ class StateDatabase:
                     {
                         "id": row["id"],
                         "timestamp": row["timestamp"],
+                        "turn": row["turn"],
                         "type": row["notification_type"],
+                        "title": row["title"],
                         "message": row["message"],
                         "data": json.loads(row["data_json"]) if row["data_json"] else None
                     }
@@ -226,7 +236,7 @@ class StateDatabase:
                 ]
 
     def acknowledge_notification(self, notification_id: int) -> bool:
-        """Mark a notification as acknowledged.
+        """Mark a game notification as acknowledged.
         
         Args:
             notification_id: Notification ID to acknowledge
@@ -237,7 +247,7 @@ class StateDatabase:
         with self._lock:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.execute("""
-                    UPDATE notifications 
+                    UPDATE game_notifications 
                     SET acknowledged = 1 
                     WHERE id = ?
                 """, (notification_id,))
@@ -245,7 +255,7 @@ class StateDatabase:
                 return cursor.rowcount > 0
 
     def acknowledge_all_notifications(self) -> int:
-        """Mark all notifications as acknowledged.
+        """Mark all game notifications as acknowledged.
         
         Returns:
             Number of notifications acknowledged
@@ -253,7 +263,7 @@ class StateDatabase:
         with self._lock:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.execute("""
-                    UPDATE notifications 
+                    UPDATE game_notifications 
                     SET acknowledged = 1 
                     WHERE acknowledged = 0
                 """)
