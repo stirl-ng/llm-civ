@@ -203,7 +203,7 @@ class StateDatabase:
                 """, (timestamp, turn, notification_type, title, message, data_json))
                 conn.commit()
                 row_id = cursor.lastrowid
-                logger.info(f"Saved game notification: {notification_type} - {message}")
+                # logger.info(f"Saved game notification: {notification_type} - {message}")
                 return row_id
 
     def get_unacknowledged_notifications(self) -> list[dict[str, Any]]:

@@ -6,6 +6,7 @@ import threading
 from ctypes import wintypes
 from typing import Any, Callable, Optional
 
+from .formatting import pretty_print_json
 from .logging_setup import get_logger
 from .state_db import StateDatabase
 from .state_validator import StateValidator
@@ -99,10 +100,8 @@ class PipeConnection:
         Thread-safe: can be called from HTTP handler thread.
         """
         with self._lock:
-            # Send action
-            action_type = action.get("type", "unknown")
-            action_kind = action.get("action", {}).get("kind", "unknown") if isinstance(action.get("action"), dict) else "unknown"
-            self._log.info(f"Sending action to DLL: type={action_type}, kind={action_kind}")
+            # Pretty print outgoing action
+            self._log.info(f"📤 Outgoing to DLL: {action.get('type', 'unknown')}\n{pretty_print_json(action)}")
             
             message = json.dumps(action).encode("utf-8") + b"\n"
             if not self._write(message):
@@ -110,42 +109,34 @@ class PipeConnection:
                 return {"error": "Pipe write failed"}
 
             # Read response
-            response_data = self._read()
-            if response_data is None:
-                self._log.error("Failed to read response from DLL")
-                return {"error": "Pipe read failed"}
+            # response_data = self._read()
+            # if response_data is None:
+            #     self._log.error("Failed to read response from DLL")
+            #     return {"error": "Pipe read failed"}
 
-            # Log raw response receipt
-            self._log.info(f"Received response from DLL: {len(response_data)} bytes")
-
-            try:
-                response = json.loads(response_data.decode("utf-8"))
-                # Log parsed response details
-                resp_type = response.get("type", "unknown") if isinstance(response, dict) else "non-dict"
-                resp_info = f"type={resp_type}"
-                if isinstance(response, dict):
-                    if "request_id" in response:
-                        resp_info += f", request_id={response['request_id']}"
-                    if "success" in response:
-                        resp_info += f", success={response['success']}"
-                self._log.info(f"Parsed response from DLL: {resp_info}")
-                return response
-            except json.JSONDecodeError as e:
-                self._log.error(f"Invalid JSON response: {e}, raw data: {response_data[:100]!r}")
-                return {"error": f"Invalid JSON response: {e}"}
+            # try:
+            #     response = json.loads(response_data.decode("utf-8"))
+            #     # Pretty print response
+            #     self._log.info(f"📥 Response from DLL: {response.get('type', 'unknown')}\n{pretty_print_json(response)}")
+            #     return response
+            # except json.JSONDecodeError as e:
+            #     self._log.error(f"Invalid JSON response: {e}, raw data: {response_data[:100]!r}")
+            #     return {"error": f"Invalid JSON response: {e}"}
 
     def send_end_turn(self) -> None:
         """Send end_turn signal to DLL (no response expected)."""
         with self._lock:
-            self._log.info("Sending end_turn signal to DLL")
-            message = json.dumps({"type": "end_turn"}).encode("utf-8") + b"\n"
+            msg = {"type": "end_turn"}
+            self._log.info(f"📤 Outgoing to DLL: end_turn\n{pretty_print_json(msg)}")
+            message = json.dumps(msg).encode("utf-8") + b"\n"
             self._write(message)  # Fire and forget - don't block on errors
 
     def send_forced_end_turn(self) -> None:
         """Send forced_end_turn signal to DLL (no response expected)."""
         with self._lock:
-            self._log.info("Sending forced_end_turn signal to DLL")
-            message = json.dumps({"type": "forced_end_turn"}).encode("utf-8") + b"\n"
+            msg = {"type": "forced_end_turn"}
+            self._log.info(f"📤 Outgoing to DLL: forced_end_turn\n{pretty_print_json(msg)}")
+            message = json.dumps(msg).encode("utf-8") + b"\n"
             self._write(message)  # Fire and forget - don't block on errors
 
     def _write(self, data: bytes) -> bool:
@@ -221,7 +212,7 @@ class StateProcessor:
                 log_msg += f" - {message}"
             if turn is not None:
                 log_msg += f" (turn {turn})"
-            self._log.info(log_msg)
+            # self._log.info(log_msg)
             
             if self.state_db:
                 self.state_db.save_game_notification(
@@ -382,30 +373,27 @@ class NamedPipeServer:
             self._dispatch(data, pipe_conn)
 
     def _dispatch(self, data: bytes, pipe_conn: PipeConnection) -> None:
-        # Log raw message receipt
-        # self._log.info(f"Received message from DLL: {len(data)} bytes")
+        """Dispatch message to handler thread immediately.
         
-        try:
-            decoded = data.decode("utf-8").rstrip("\r\n")
-            state = json.loads(decoded)
-        except (UnicodeDecodeError, json.JSONDecodeError) as e:
-            self._log.error(f"Failed to parse message: {e}, raw data: {data[:100]!r}")
-            return
-
-        # Log parsed message details
-        msg_type = state.get("type", "unknown") if isinstance(state, dict) else "non-dict"
-        msg_info = f"type={msg_type}"
-        if isinstance(state, dict):
-            if "turn" in state:
-                msg_info += f", turn={state['turn']}"
-            if "player_id" in state:
-                msg_info += f", player_id={state['player_id']}"
-        self._log.info(f"Parsed message from DLL: {msg_info}")
-
-        # Run handler in separate thread so pipe reading can continue
-        # This allows new messages to be processed even if handler is blocking
+        Returns as fast as possible to allow next ReadFile to start.
+        All parsing and processing happens in the handler thread.
+        """
+        # Run handler in separate thread so pipe reading can continue immediately
+        # This ensures we never miss messages - next ReadFile starts right away
         def run_handler():
             try:
+                # Parse JSON (moved here to keep _dispatch fast)
+                try:
+                    decoded = data.decode("utf-8").rstrip("\r\n")
+                    state = json.loads(decoded)
+                except (UnicodeDecodeError, json.JSONDecodeError) as e:
+                    self._log.error(f"Failed to parse message: {e}, raw data: {data[:100]!r}")
+                    return
+
+                # Pretty print incoming message from DLL
+                msg_type = state.get("type", "unknown") if isinstance(state, dict) else "non-dict"
+                self._log.info(f"📥 Incoming from DLL: {pretty_print_json(state)}")
+
                 # Process state (validation, persistence, notifications)
                 self.state_processor.process_state(state, self.on_turn_start, pipe_conn)
             except Exception as e:
@@ -416,8 +404,8 @@ class NamedPipeServer:
                     if self._current_handler_thread == threading.current_thread():
                         self._current_handler_thread = None
 
-        handler_thread = threading.Thread(target=run_handler, daemon=True, name=f"TurnHandler-{state.get('turn', '?')}")
+        # Use a placeholder name - we'll update it in the handler if parsing succeeds
+        handler_thread = threading.Thread(target=run_handler, daemon=True, name="TurnHandler-pending")
         with self._handler_lock:
             self._current_handler_thread = handler_thread
         handler_thread.start()
-        self._log.debug(f"Started handler thread for turn {state.get('turn', '?')}")

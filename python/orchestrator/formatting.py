@@ -85,3 +85,19 @@ def format_message(raw: str, raw_mode: bool = False) -> str:
         return format_game_state(data)
     except json.JSONDecodeError as e:
         return f"[warn] Invalid JSON: {e}\n  Raw: {raw[:200]}..."
+
+
+def pretty_print_json(data: Any, title: str = "") -> str:
+    """Pretty print JSON data with optional title.
+    
+    Args:
+        data: Data to pretty print (dict, list, etc.)
+        title: Optional title to prefix the output
+        
+    Returns:
+        Formatted string
+    """
+    formatted = json.dumps(data, indent=2, ensure_ascii=False)
+    if title:
+        return f"{title}:\n{formatted}"
+    return formatted

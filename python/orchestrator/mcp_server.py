@@ -14,7 +14,7 @@ import logging
 import threading
 from typing import TYPE_CHECKING, Any, Optional
 
-from .formatting import format_game_state
+from .formatting import format_game_state, pretty_print_json
 
 if TYPE_CHECKING:
     from .pipe_server import PipeConnection
@@ -245,7 +245,8 @@ class CivMCPServer:
             self._last_action_time = None
 
         turn_num = state.get("turn", "?")
-        logger.info(f"Turn {turn_num} started - waiting for LLM decisions")
+        player_id = state.get("player_id", "?")
+        # logger.info(f"🎮 TURN {turn_num} STARTED (Player {player_id})\nWaiting for LLM decisions...")
 
     def wait_for_turn_end(self, timeout: Optional[float] = None) -> bool:
         """Block until LLM calls end_turn or timeout expires.
@@ -303,17 +304,49 @@ class CivMCPServer:
             self._action_errors = 0
             self._last_action_time = None
 
+    def _log_tool_call(self, name: str, arguments: dict[str, Any]) -> None:
+        """Log a tool call (for tools that don't generate pipe messages)."""
+        if name not in ("send_action", "end_turn", "forced_end_turn"):
+            logger.info(f"🔧 TOOL CALL: {name}\n{pretty_print_json(arguments, 'Arguments')}")
+
+    def _log_tool_result(self, name: str, result: dict[str, Any], is_error: bool = False) -> None:
+        """Log a tool result."""
+        if name in ("send_action", "end_turn", "forced_end_turn"):
+            return
+        if is_error:
+            logger.warning(f"❌ TOOL ERROR: {name}\n{pretty_print_json(result)}")
+        else:
+            logger.info(f"✅ TOOL RESULT: {name}\n{pretty_print_json(result)}")
+
     def execute_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute a tool and return results."""
+        self._log_tool_call(name, arguments)
 
-        # Query tools - read from cache
-        if name == "get_game_state":
-            return self._get_game_state(
+        # Query tools - simple parameter extraction and dispatch
+        query_tools = {
+            "get_game_state": lambda: self._get_game_state(
                 category=arguments.get("category"),
                 format_type=arguments.get("format", "json")
-            )
+            ),
+            "get_cities": lambda: self._get_cities(city_id=arguments.get("city_id")),
+            "get_units": lambda: self._get_units(unit_id=arguments.get("unit_id")),
+            "get_tech_tree": lambda: self._get_tech_tree(),
+            "get_diplomacy": lambda: self._get_diplomacy(),
+            "get_available_choices": lambda: self._get_available_choices(),
+            "get_victory_progress": lambda: self._get_victory_progress(),
+            "get_resources": lambda: self._get_resources(),
+            "format_state": lambda: self._format_state(raw=arguments.get("raw", False)),
+            "get_state_refresh": lambda: self._get_state_refresh(),
+            "get_notifications": lambda: self._get_notifications(),
+        }
 
-        elif name == "send_action":
+        if name in query_tools:
+            result = query_tools[name]()
+            self._log_tool_result(name, result, is_error="error" in result)
+            return result
+
+        # Action tools
+        if name == "send_action":
             action = arguments.get("action")
             if action is None:
                 return {"error": "Missing required parameter 'action'"}
@@ -321,64 +354,38 @@ class CivMCPServer:
                 return {"error": f"Parameter 'action' must be a dictionary, got {type(action).__name__}"}
             return self._send_action(action=action)
 
-        elif name == "get_cities":
-            return self._get_cities(city_id=arguments.get("city_id"))
-
-        elif name == "get_units":
-            return self._get_units(unit_id=arguments.get("unit_id"))
-
-        elif name == "get_tech_tree":
-            return self._get_tech_tree()
-
-        elif name == "get_diplomacy":
-            return self._get_diplomacy()
-
-        elif name == "get_available_choices":
-            return self._get_available_choices()
-
-        elif name == "get_victory_progress":
-            return self._get_victory_progress()
-
-        elif name == "get_resources":
-            return self._get_resources()
-
-        elif name == "format_state":
-            return self._format_state(raw=arguments.get("raw", False))
-
-        # Action tools - forward to DLL via turn manager
-        elif name == "send_action":
-            action = arguments.get("action")
-            if not action:
-                return {"success": False, "error": "Missing 'action' parameter"}
-            return self._send_action(action, notes=arguments.get("notes", ""))
-
-        elif name == "get_state_refresh":
-            return self._get_state_refresh()
-
         # Turn control
-        elif name == "end_turn":
+        if name == "end_turn":
             return self._end_turn(notes=arguments.get("notes", ""))
 
-        elif name == "forced_end_turn":
+        if name == "forced_end_turn":
             return self._forced_end_turn(notes=arguments.get("notes", ""))
 
-        elif name == "get_notifications":
-            return self._get_notifications()
-
-        elif name == "acknowledge_notification":
+        # Tools with validation
+        if name == "acknowledge_notification":
             notification_id = arguments.get("notification_id")
             if notification_id is None:
-                return {"error": "Missing required parameter 'notification_id'"}
-            return self._acknowledge_notification(notification_id)
+                error = {"error": "Missing required parameter 'notification_id'"}
+                self._log_tool_result(name, error, is_error=True)
+                return error
+            result = self._acknowledge_notification(notification_id)
+            self._log_tool_result(name, result, is_error="error" in result)
+            return result
 
-        elif name == "get_state_history":
+        if name == "get_state_history":
             limit = arguments.get("limit", 10)
             if not isinstance(limit, int) or limit < 1:
-                return {"error": "limit must be a positive integer"}
-            return self._get_state_history(limit)
+                error = {"error": "limit must be a positive integer"}
+                self._log_tool_result(name, error, is_error=True)
+                return error
+            result = self._get_state_history(limit)
+            self._log_tool_result(name, result, is_error="error" in result)
+            return result
 
-        else:
-            return {"error": f"Unknown tool: {name}"}
+        # Unknown tool
+        error = {"error": f"Unknown tool: {name}"}
+        self._log_tool_result(name, error, is_error=True)
+        return error
 
     def _send_action(self, action: dict[str, Any]) -> dict[str, Any]:
         """Send an action to the DLL immediately and return the response.
@@ -411,7 +418,8 @@ class CivMCPServer:
 
         import time
         action_kind = action.get("kind", "unknown")
-        logger.info(f"Turn {current_turn}: Sending action '{action_kind}' to DLL: {action}")
+        # Action will be pretty-printed in pipe_server.send_action()
+        logger.debug(f"Turn {current_turn}: Preparing action '{action_kind}'")
 
         # Send action and get response synchronously
         try:
@@ -445,7 +453,8 @@ class CivMCPServer:
             except Exception as e:
                 logger.warning(f"Failed to save action to database: {e}")
 
-        logger.debug(f"DLL response for '{action_kind}': {response}")
+        # Response already pretty-printed in pipe_server.send_action()
+        logger.debug(f"Action '{action_kind}' completed")
 
         # Update current state if response includes updated state or state_delta
         if isinstance(response, dict):
@@ -476,13 +485,14 @@ class CivMCPServer:
             current_turn = self._current_turn_number
 
         # Send end_turn to DLL (fire and forget - don't block)
+        # Message will be pretty-printed in pipe_server.send_end_turn()
         if pipe_conn:
             pipe_conn.send_end_turn()
 
         # Signal orchestrator that turn is done
         self._turn_ended.set()
 
-        logger.info(f"Turn {current_turn} ended by LLM")
+        logger.info(f"✅ Turn {current_turn} ended by LLM" + (f" (notes: {notes})" if notes else ""))
         return {
             "status": "turn_ended",
             "notes": notes
@@ -501,13 +511,14 @@ class CivMCPServer:
             current_turn = self._current_turn_number
 
         # Send forced_end_turn to DLL (fire and forget - don't block)
+        # Message will be pretty-printed in pipe_server.send_forced_end_turn()
         if pipe_conn:
             pipe_conn.send_forced_end_turn()
 
         # Signal orchestrator that turn is done
         self._turn_ended.set()
 
-        logger.info(f"Turn {current_turn} force ended by LLM")
+        logger.info(f"⚡ Turn {current_turn} force ended by LLM" + (f" (notes: {notes})" if notes else ""))
         return {
             "status": "turn_force_ended",
             "notes": notes
