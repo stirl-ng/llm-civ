@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import ctypes
 import json
+import logging
 import queue
 import threading
 import uuid
 from ctypes import wintypes
 from typing import Any, Callable, Optional
 
-from .formatting import pretty_print_json
-from .logging_setup import get_logger
-from .state_validator import StateValidator
+from .message_validator import MessageValidator
 
 
 LPSECURITY_ATTRIBUTES = ctypes.c_void_p
@@ -92,7 +91,7 @@ class PipeConnection:
     def __init__(self, handle: int):
         self._handle = handle
         self._lock = threading.Lock()
-        self._log = get_logger()
+        self._log = logging.getLogger(__name__)
         self._buf = (ctypes.c_char * WinAPI.BUFSIZE)()
         # Response waiting mechanism for synchronous requests
         self._pending_responses: dict[str, queue.Queue[dict[str, Any]]] = {}
@@ -105,8 +104,7 @@ class PipeConnection:
         Never waits for response - we can't trust DLL responses.
         """
         with self._lock:
-            # Pretty print outgoing action
-            self._log.info(f"📤 Outgoing to DLL: {action.get('type', 'unknown')}\n{pretty_print_json(action)}")
+            self._log.info(f"📤 Outgoing to DLL: action: {action}")
             
             message = json.dumps(action).encode("utf-8") + b"\n"
             if not self._write(message):
@@ -120,7 +118,7 @@ class PipeConnection:
         """Send end_turn signal to DLL (no response expected)."""
         with self._lock:
             msg = {"type": "end_turn"}
-            self._log.info(f"📤 Outgoing to DLL: end_turn\n{pretty_print_json(msg)}")
+            self._log.info(f"📤 Outgoing to DLL: end_turn: {msg}")
             message = json.dumps(msg).encode("utf-8") + b"\n"
             self._write(message)  # Fire and forget - don't block on errors
 
@@ -128,7 +126,7 @@ class PipeConnection:
         """Send forced_end_turn signal to DLL (no response expected)."""
         with self._lock:
             msg = {"type": "forced_end_turn"}
-            self._log.info(f"📤 Outgoing to DLL: forced_end_turn\n{pretty_print_json(msg)}")
+            self._log.info(f"📤 Outgoing to DLL: forced_end_turn: {msg}")
             message = json.dumps(msg).encode("utf-8") + b"\n"
             self._write(message)  # Fire and forget - don't block on errors
 
@@ -145,8 +143,7 @@ class PipeConnection:
             Status dict indicating request was sent
         """
         with self._lock:
-            # Pretty print outgoing request
-            self._log.info(f"📤 Outgoing to DLL: {request.get('type', 'unknown')}\n{pretty_print_json(request)}")
+            self._log.info(f"📤 Outgoing to DLL: request: {request}")
             
             message = json.dumps(request).encode("utf-8") + b"\n"
             if not self._write(message):
@@ -210,9 +207,9 @@ class StateProcessor:
     
     def __init__(self):
         """Initialize state processor."""
-        self.validator = StateValidator()
+        self.validator = MessageValidator()
         self._last_state: Optional[dict[str, Any]] = None
-        self._log = get_logger()
+        self._log = logging.getLogger(__name__)
     
     def process_state(
         self,
@@ -250,11 +247,11 @@ class StateProcessor:
         
         # Log EVERYTHING from DLL to JSONL file
         # Import here to avoid circular dependency
-        from .notification_logger import DLLMessageLogger
+        from .game_logger import GameLogger
         
-        # Get or create message logger (simple singleton pattern)
+        # Get or create game logger (simple singleton pattern)
         if not hasattr(self, "_message_logger"):
-            self._message_logger = DLLMessageLogger()
+            self._message_logger = GameLogger()
         
         # Just push everything we get from DLL
         self._message_logger.log_message(state)
@@ -263,18 +260,18 @@ class StateProcessor:
         if msg_type == "game_notification" or msg_type == "notification":
             return  # Don't process as a state message
         
-        # Validate state
-        is_valid, error_msg = self.validator.validate_state(state)
+        # Validate message
+        is_valid, error_msg = self.validator.validate_message(state)
         
         if not is_valid:
-            self._log.error(f"State validation failed: {error_msg}")
+            self._log.error(f"Message validation failed: {error_msg}")
             return
         
-        # Check consistency with previous state
+        # Check consistency with previous turn_start message
         if self._last_state:
-            is_consistent, warning = self.validator.check_state_consistency(self._last_state, state)
+            is_consistent, warning = self.validator.check_turn_consistency(self._last_state, state)
             if not is_consistent:
-                self._log.warning(f"State consistency issue: {warning}")
+                self._log.warning(f"Turn consistency issue: {warning}")
         
         # Update last state
         self._last_state = state
@@ -304,7 +301,7 @@ class NamedPipeServer:
         self.pipe_name = pipe_name
         self.on_turn_start = on_turn_start
         self._running = False
-        self._log = get_logger()
+        self._log = logging.getLogger(__name__)
         self._handle: Optional[int] = None
         self._current_handler_thread: Optional[threading.Thread] = None
         self._handler_lock = threading.Lock()
@@ -422,9 +419,9 @@ class NamedPipeServer:
                     self._log.error(f"Failed to parse message: {e}, raw data: {data[:100]!r}")
                     return
 
-                # Pretty print incoming message from DLL
+                # Log incoming message from DLL
                 msg_type = state.get("type", "unknown") if isinstance(state, dict) else "non-dict"
-                self._log.info(f"📥 Incoming from DLL: {pretty_print_json(state)}")
+                self._log.info(f"📥 Incoming from DLL: {msg_type}")
 
                 # Process state (validation, persistence, notifications)
                 self.state_processor.process_state(state, self.on_turn_start, pipe_conn)

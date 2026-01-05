@@ -11,12 +11,13 @@ Modes:
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 from threading import Thread
 from typing import TYPE_CHECKING, Any
 
-from .formatting import format_game_state
+from .logging_setup import setup_logging
 from .mcp_http_server import MCPHTTPServer
 from .pipe_server import NamedPipeServer
 
@@ -27,7 +28,7 @@ if TYPE_CHECKING:
 DEFAULT_PIPE = r"\\.\pipe\civv_llm"
 
 
-def run_debug_server(pipe_path: str, raw_mode: bool = False) -> None:
+def run_debug_server(pipe_path: str) -> None:
     """Run a debug pipe server that displays incoming messages (read-only)."""
     import json
 
@@ -35,17 +36,13 @@ def run_debug_server(pipe_path: str, raw_mode: bool = False) -> None:
     print("Civ V LLM Bridge - Debug Mode (read-only)")
     print("=" * 60)
     print(f"Pipe: {pipe_path}")
-    print(f"Mode: {'raw JSON' if raw_mode else 'formatted'}")
     print("Waiting for DLL to connect...")
     print("=" * 60)
     print()
 
     def on_turn_start(state: dict[str, Any], pipe_conn: "PipeConnection") -> None:
-        if raw_mode:
-            print(json.dumps(state, indent=2), flush=True)
-        else:
-            print(format_game_state(state), flush=True)
-        # Debug mode: don't send any actions, just display
+        # Debug mode: don't send any actions, just display raw JSON
+        print(json.dumps(state, indent=2), flush=True)
 
     server = NamedPipeServer(pipe_path, on_turn_start)
     try:
@@ -60,7 +57,6 @@ def run_mcp_mode(
     mcp_host: str,
     mcp_port: int,
     turn_timeout: float,
-    once: bool = False,
     dashboard_host: str | None = None,
     dashboard_port: int = 5000,
 ) -> None:
@@ -150,6 +146,9 @@ def run_standalone_dashboard(host: str, port: int) -> None:
 
 
 def main() -> None:
+    # Setup logging first (before any other imports that might log)
+    setup_logging()
+    
     parser = argparse.ArgumentParser(
         description="Civ V LLM Orchestrator - bridges DLL and LLM via MCP HTTP"
     )
@@ -157,8 +156,6 @@ def main() -> None:
     # Pipe options
     parser.add_argument("--pipe", default=DEFAULT_PIPE,
                         help=f"Named pipe path (default: {DEFAULT_PIPE})")
-    parser.add_argument("--once", action="store_true",
-                        help="Process one turn then exit")
 
     # MCP options
     parser.add_argument("--mcp-host", default="localhost",
@@ -181,8 +178,6 @@ def main() -> None:
     # Debug options
     parser.add_argument("--debug", action="store_true",
                         help="Debug mode: display messages only (read-only)")
-    parser.add_argument("--raw", action="store_true",
-                        help="In debug mode, show raw JSON")
 
     args = parser.parse_args()
 
@@ -193,7 +188,7 @@ def main() -> None:
 
     # Debug mode (read-only viewer)
     if args.debug:
-        run_debug_server(args.pipe, raw_mode=args.raw)
+        run_debug_server(args.pipe)
         return
 
     # Default: MCP mode
@@ -203,7 +198,6 @@ def main() -> None:
         mcp_host=args.mcp_host,
         mcp_port=args.mcp_port,
         turn_timeout=args.turn_timeout,
-        once=args.once,
         dashboard_host=args.dashboard_host if args.dashboard else None,
         dashboard_port=args.dashboard_port,
     )

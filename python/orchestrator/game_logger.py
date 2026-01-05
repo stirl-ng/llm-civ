@@ -1,4 +1,4 @@
-"""Simple JSONL file logger for all DLL messages."""
+"""JSONL file logger for all game messages from the DLL."""
 
 import json
 import threading
@@ -11,15 +11,15 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class DLLMessageLogger:
-    """Simple JSONL file logger for all messages from the DLL.
+class GameLogger:
+    """JSONL file logger for all game messages from the DLL.
     
-    Just appends everything we get from the DLL to a JSONL file.
-    We can filter by type later when fetching.
+    Logs all messages from the DLL (turn_start, notifications, action results, etc.)
+    to JSONL files for later querying and analysis.
     """
 
     def __init__(self, messages_file: str = "dll_messages.jsonl", acknowledgments_file: str = "acknowledgments.jsonl"):
-        """Initialize the message logger.
+        """Initialize the game logger.
         
         Args:
             messages_file: Path to JSONL file for all DLL messages

@@ -474,7 +474,6 @@ DASHBOARD_HTML = """
                     <button class="command-btn" onclick="runCommand('get_trade_route_overview')">Get Trade Route Overview</button>
                     <button class="command-btn" onclick="runCommand('get_victory_progress')">Get Victory Progress</button>
                     <button class="command-btn" onclick="runCommand('get_world_congress')">Get World Congress</button>
-                    <button class="command-btn" onclick="runCommand('format_state')">Format State (Human Readable)</button>
                 </div>
 
                 <div class="command-section">
@@ -719,6 +718,10 @@ def run_dashboard(
 
 if __name__ == "__main__":
     import sys
+
+    from .logging_setup import setup_logging
+
+    setup_logging()
 
     host = sys.argv[1] if len(sys.argv) > 1 else "0.0.0.0"
     port = int(sys.argv[2]) if len(sys.argv) > 2 else 5000

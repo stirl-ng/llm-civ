@@ -108,6 +108,16 @@ Player UI sees:
         Victory Progress
         World Congress
 
+ 
+Important Adds
+    "needs orders" list
+        mentioned in discussion of auto-missions (a queued, multi-turn) 
+            do we need this too?
+
+MPSIMULTANEOUS_TURNS
+    We have sequential mode... thought?
+    TODO later...
+
 
 Enemy Civ Info?
     Units
