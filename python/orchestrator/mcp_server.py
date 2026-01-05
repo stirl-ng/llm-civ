@@ -13,9 +13,9 @@ to the LLM, allowing it to see the result before deciding the next action.
 import logging
 import threading
 import time
+import uuid
 from typing import TYPE_CHECKING, Any, Optional
 
-from .formatting import format_game_state, pretty_print_json
 
 if TYPE_CHECKING:
     from .pipe_server import PipeConnection
@@ -27,7 +27,7 @@ def _validate_action(action: Any) -> tuple[bool, Optional[str]]:
     """Validate that an action is properly formatted.
     
     Args:
-        action: The action to validate
+        action: The action to validate (should have 'kind' field)
         
     Returns:
         Tuple of (is_valid, error_message). If valid, error_message is None.
@@ -38,38 +38,11 @@ def _validate_action(action: Any) -> tuple[bool, Optional[str]]:
     if not action:
         return False, "Action cannot be empty"
     
-    # Check for required 'kind' field (common action pattern)
+    # Check for required 'kind' field (will become message 'type')
     if "kind" not in action:
-        # Not all actions require 'kind', but log a warning for debugging
-        logger.debug(f"Action missing 'kind' field: {action}")
+        return False, "Action missing required 'kind' field"
     
     return True, None
-
-
-def _merge_state_delta(base_state: dict[str, Any], delta: dict[str, Any]) -> dict[str, Any]:
-    """Merge a state delta into the base state.
-    
-    Handles nested dictionaries by merging recursively.
-    Lists are replaced entirely (no merging).
-    
-    Args:
-        base_state: The current state to update
-        delta: The state delta to apply
-        
-    Returns:
-        New merged state (does not modify base_state)
-    """
-    result = base_state.copy()
-    
-    for key, value in delta.items():
-        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-            # Recursively merge nested dictionaries
-            result[key] = _merge_state_delta(result[key], value)
-        else:
-            # Replace or add the value
-            result[key] = value
-    
-    return result
 
 
 # Tool definitions for documentation/discovery
@@ -77,7 +50,7 @@ AVAILABLE_TOOLS = [
     {
         "name": "get_game_state",
         "description": "Get the current game state. Optionally filter by category.",
-        "parameters": {"category": "optional string", "format": "optional: json|human_readable"},
+        "parameters": {"category": "optional string"},
     },
     {
         "name": "send_action",
@@ -118,11 +91,6 @@ AVAILABLE_TOOLS = [
         "name": "get_resources",
         "description": "Get strategic and luxury resources.",
         "parameters": {},
-    },
-    {
-        "name": "format_state",
-        "description": "Get a human-readable formatted version of the game state.",
-        "parameters": {"raw": "optional bool"},
     },
     {
         "name": "get_state_refresh",
@@ -201,9 +169,9 @@ class CivMCPServer:
         self._action_errors = 0
         self._last_action_time: Optional[float] = None
         
-        # Message logger (JSONL file) - logs everything from DLL
-        from .notification_logger import DLLMessageLogger
-        self._message_logger = DLLMessageLogger()
+        # Game logger (JSONL file) - logs everything from DLL
+        from .game_logger import GameLogger
+        self._message_logger = GameLogger()
 
     def start_turn(self, state: dict[str, Any], pipe_conn: "PipeConnection") -> None:
         """Start a new turn with the given game state and pipe connection.
@@ -302,6 +270,18 @@ class CivMCPServer:
         with self._lock:
             return self._turn_notes
     
+    @property
+    def turn_active(self) -> bool:
+        """Check if a turn is currently active."""
+        with self._lock:
+            return self._turn_active
+    
+    @property
+    def turn_number(self) -> Optional[int]:
+        """Get the current turn number."""
+        with self._lock:
+            return self._current_turn_number
+    
     def get_action_stats(self) -> dict[str, Any]:
         """Get statistics about actions sent during the current turn.
         
@@ -325,16 +305,16 @@ class CivMCPServer:
     def _log_tool_call(self, name: str, arguments: dict[str, Any]) -> None:
         """Log a tool call (for tools that don't generate pipe messages)."""
         if name not in ("send_action", "end_turn", "forced_end_turn"):
-            logger.info(f"🔧 TOOL CALL: {name}\n{pretty_print_json(arguments, 'Arguments')}")
+            logger.info(f"🔧 TOOL CALL: {name}\n{arguments}")
 
     def _log_tool_result(self, name: str, result: dict[str, Any], is_error: bool = False) -> None:
         """Log a tool result."""
         if name in ("send_action", "end_turn", "forced_end_turn"):
             return
         if is_error:
-            logger.warning(f"❌ TOOL ERROR: {name}\n{pretty_print_json(result)}")
+            logger.warning(f"❌ TOOL ERROR: {name}: {result}")
         else:
-            logger.info(f"✅ TOOL RESULT: {name}\n{pretty_print_json(result)}")
+            logger.info(f"✅ TOOL RESULT: {name}: {result}")
 
     def execute_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute a tool and return results."""
@@ -343,8 +323,7 @@ class CivMCPServer:
         # Query tools - simple parameter extraction and dispatch
         query_tools = {
             "get_game_state": lambda: self._get_game_state(
-                category=arguments.get("category"),
-                format_type=arguments.get("format", "json")
+                category=arguments.get("category")
             ),
             "get_cities": lambda: self._get_cities(city_id=arguments.get("city_id")),
             "get_units": lambda: self._get_units(player_id=arguments.get("player_id")),
@@ -353,7 +332,6 @@ class CivMCPServer:
             "get_available_choices": lambda: self._get_available_choices(),
             "get_victory_progress": lambda: self._get_victory_progress(),
             "get_resources": lambda: self._get_resources(),
-            "format_state": lambda: self._format_state(raw=arguments.get("raw", False)),
             "get_state_refresh": lambda: self._get_state_refresh(),
             "get_notifications": lambda: self._get_notifications(),
         }
@@ -447,13 +425,25 @@ class CivMCPServer:
             return {"error": "No pipe connection available"}
 
         import time
-        action_kind = action.get("kind", "unknown")
-        # Action will be pretty-printed in pipe_server.send_action()
+        action_kind = action.get("kind")
+        if not action_kind:
+            return {"error": "Action missing 'kind' field"}
+        
         logger.debug(f"Turn {current_turn}: Preparing action '{action_kind}'")
+
+        # Convert action to explicit message type per protocol
+        # Protocol: actions are explicit message types, not wrapped in generic "action"
+        # Extract 'kind' and use it as 'type', add request_id, keep other fields
+        message = action.copy()
+        message["type"] = action_kind
+        message["request_id"] = str(uuid.uuid4())
+        # Remove 'kind' since it's now 'type'
+        if "kind" in message:
+            del message["kind"]
 
         # Send action (fire-and-forget, non-blocking)
         try:
-            result = pipe_conn.send_action({"type": "action", "action": action})
+            result = pipe_conn.send_action(message)
             # send_action now returns immediately with status
             if "error" in result:
                 with self._lock:
@@ -525,7 +515,7 @@ class CivMCPServer:
             "notes": notes
         }
 
-    def _get_game_state(self, category: Optional[str] = None, format_type: str = "json") -> dict[str, Any]:
+    def _get_game_state(self, category: Optional[str] = None) -> dict[str, Any]:
         """Get current game state, optionally filtered by category."""
         if not self.current_state:
             return {"error": "No game state available - not your turn yet"}
@@ -537,10 +527,6 @@ class CivMCPServer:
                 state = {category: state[category]}
             else:
                 return {"error": f"Category '{category}' not found", "available": list(state.keys())}
-
-        if format_type == "human_readable":
-            formatted = format_game_state(state)
-            return {"formatted": formatted, "json": state}
 
         return state
 
@@ -632,19 +618,6 @@ class CivMCPServer:
             "total": data.get("resources", {})
         }
 
-    def _format_state(self, raw: bool = False) -> dict[str, Any]:
-        """Get formatted game state."""
-        state = self.current_state
-        if not state:
-            return {"error": "No game state available"}
-
-        data = self.current_state.get("state", {})
-        formatted = format_game_state(data)
-
-        if raw:
-            return {"formatted": formatted, "raw": state}
-
-        return {"formatted": formatted}
     
     def _get_notifications(self) -> dict[str, Any]:
         """Get unacknowledged notifications from the current game only."""

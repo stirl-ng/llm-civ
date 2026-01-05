@@ -1,4 +1,4 @@
-"""State validation and sanity checking for incoming game state data."""
+"""Message validation and sanity checking for incoming DLL messages."""
 
 import logging
 from typing import Any, Optional
@@ -6,58 +6,58 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 
-class StateValidator:
-    """Validates and performs sanity checks on game state data."""
+class MessageValidator:
+    """Validates and performs sanity checks on DLL messages."""
 
     @staticmethod
-    def validate_state(state: dict[str, Any]) -> tuple[bool, Optional[str]]:
-        """Validate a game state message.
+    def validate_message(message: dict[str, Any]) -> tuple[bool, Optional[str]]:
+        """Validate a DLL message.
         
         Args:
-            state: State dictionary to validate
+            message: Message dictionary to validate
             
         Returns:
             Tuple of (is_valid, error_message). If valid, error_message is None.
         """
-        if not isinstance(state, dict):
-            return False, f"State must be a dictionary, got {type(state).__name__}"
+        if not isinstance(message, dict):
+            return False, f"Message must be a dictionary, got {type(message).__name__}"
         
-        if not state:
-            return False, "State cannot be empty"
+        if not message:
+            return False, "Message cannot be empty"
         
         # Check for required message type
-        msg_type = state.get("type")
+        msg_type = message.get("type")
         if not msg_type:
-            return False, "State missing required 'type' field"
+            return False, "Message missing required 'type' field"
         
         # Validate turn_start messages
         if msg_type == "turn_start":
-            return StateValidator._validate_turn_start(state)
+            return MessageValidator._validate_turn_start(message)
         
         # Validate action_result messages
         if msg_type == "action_result":
-            return StateValidator._validate_action_result(state)
+            return MessageValidator._validate_action_result(message)
         
         # Other message types are allowed but logged
         logger.debug(f"Received message type '{msg_type}' (not specifically validated)")
         return True, None
 
     @staticmethod
-    def _validate_turn_start(state: dict[str, Any]) -> tuple[bool, Optional[str]]:
+    def _validate_turn_start(message: dict[str, Any]) -> tuple[bool, Optional[str]]:
         """Validate a turn_start message."""
         # Check required fields
-        if "turn" not in state:
+        if "turn" not in message:
             return False, "turn_start message missing 'turn' field"
         
-        if "player_id" not in state:
+        if "player_id" not in message:
             return False, "turn_start message missing 'player_id' field"
         
-        if "state" not in state:
+        if "state" not in message:
             return False, "turn_start message missing 'state' field"
         
-        turn = state.get("turn")
-        player_id = state.get("player_id")
-        state_data = state.get("state", {})
+        turn = message.get("turn")
+        player_id = message.get("player_id")
+        state_data = message.get("state", {})
         
         # Sanity checks
         if not isinstance(turn, int):
@@ -76,22 +76,22 @@ class StateValidator:
             return False, f"state field must be a dictionary, got {type(state_data).__name__}"
         
         # Validate state structure
-        errors = StateValidator._validate_state_structure(state_data)
+        errors = MessageValidator._validate_state_structure(state_data)
         if errors:
             return False, f"State structure validation failed: {', '.join(errors)}"
         
         return True, None
 
     @staticmethod
-    def _validate_action_result(state: dict[str, Any]) -> tuple[bool, Optional[str]]:
+    def _validate_action_result(message: dict[str, Any]) -> tuple[bool, Optional[str]]:
         """Validate an action_result message."""
-        if "request_id" not in state:
+        if "request_id" not in message:
             return False, "action_result message missing 'request_id' field"
         
-        if "success" not in state:
+        if "success" not in message:
             return False, "action_result message missing 'success' field"
         
-        success = state.get("success")
+        success = message.get("success")
         if not isinstance(success, bool):
             return False, f"success must be a boolean, got {type(success).__name__}"
         
@@ -143,24 +143,24 @@ class StateValidator:
         return errors
 
     @staticmethod
-    def check_state_consistency(
-        previous_state: Optional[dict[str, Any]],
-        new_state: dict[str, Any]
+    def check_turn_consistency(
+        previous_message: Optional[dict[str, Any]],
+        new_message: dict[str, Any]
     ) -> tuple[bool, Optional[str]]:
-        """Check consistency between previous and new state.
+        """Check consistency between previous and new turn_start messages.
         
         Args:
-            previous_state: Previous state (if available)
-            new_state: New state to check
+            previous_message: Previous turn_start message (if available)
+            new_message: New turn_start message to check
             
         Returns:
             Tuple of (is_consistent, warning_message). Warning is None if consistent.
         """
-        if not previous_state:
+        if not previous_message:
             return True, None
         
-        prev_turn = previous_state.get("turn")
-        new_turn = new_state.get("turn")
+        prev_turn = previous_message.get("turn")
+        new_turn = new_message.get("turn")
         
         if prev_turn is not None and new_turn is not None:
             if new_turn < prev_turn:
@@ -168,8 +168,8 @@ class StateValidator:
             if new_turn > prev_turn + 1:
                 return False, f"Turn number jumped from {prev_turn} to {new_turn} (expected {prev_turn + 1})"
         
-        prev_player = previous_state.get("player_id")
-        new_player = new_state.get("player_id")
+        prev_player = previous_message.get("player_id")
+        new_player = new_message.get("player_id")
         
         if prev_player is not None and new_player is not None:
             if new_player != prev_player:

@@ -49,8 +49,8 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
 
         elif self.path == "/state":
             state = self.mcp_server.current_state or {}
-            turn_active = self.mcp_server.turn_manager.turn_active
-            turn_num = self.mcp_server.turn_manager.turn_number
+            turn_active = self.mcp_server.turn_active
+            turn_num = self.mcp_server.turn_number
             self._send_json({
                 "turn_active": turn_active,
                 "turn": turn_num,
@@ -193,10 +193,9 @@ def run_http_server(host: str = "localhost", port: int = 8765):
 if __name__ == "__main__":
     import sys
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-    )
+    from .logging_setup import setup_logging
+
+    setup_logging()
 
     host = sys.argv[1] if len(sys.argv) > 1 else "localhost"
     port = int(sys.argv[2]) if len(sys.argv) > 2 else 8765
