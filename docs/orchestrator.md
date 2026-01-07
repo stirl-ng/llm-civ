@@ -87,31 +87,7 @@ curl -X POST http://localhost:8765/tool \
 
 ## Available Tools
 
-### Query Tools (Read from Cache)
-
-| Tool | Description |
-|------|-------------|
-| `get_game_state` | Full or filtered game state |
-| `get_cities` | City information |
-| `get_units` | Unit information |
-| `get_tech_tree` | Technology status |
-| `get_diplomacy` | Diplomatic relations |
-| `get_resources` | Resources owned |
-| `get_victory_progress` | Victory condition status |
-| `get_available_choices` | Pending decisions |
-| `format_state` | Human-readable summary |
-
-### Action Tools (Forward to DLL)
-
-| Tool | Description |
-|------|-------------|
-| `send_action` | Execute a game action immediately, returns DLL response |
-
-### Turn Control
-
-| Tool | Description |
-|------|-------------|
-| `end_turn` | Signal done, complete turn |
+docs/protocol.md
 
 ## Timeouts
 
