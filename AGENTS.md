@@ -2,8 +2,15 @@
 
 ## Project Structure & Module Organization
 - `Community-Patch-DLL/`: Civ V Community Patch DLL (submodule) with LLM protocol implementation.
+  - `CvGameCoreDLL_Expansion2/GameStatePipe.cpp/.h`: Threaded named pipe communication.
+  - `CvGameCoreDLL_Expansion2/CvGame.cpp`: Command handlers and hook functions.
+  - `protocol.yaml`: Authoritative protocol specification (gitignored, local only).
 - `python/`: Orchestrator that bridges DLL and LLMs via HTTP.
-  - `orchestrator/`: Main package - pipe server, MCP server, dashboard.
+  - `orchestrator/`: Main package.
+    - `pipe_server.py`: Named pipe client connecting to DLL.
+    - `mcp_server.py`: MCP protocol implementation.
+    - `mcp_http_server.py`: HTTP server for MCP.
+    - `dashboard.py`: Web UI for monitoring.
   - `examples/`: Example client scripts.
 - `docs/`: Documentation.
   - `protocol.md`: DLL ↔ Orchestrator message protocol.
@@ -35,13 +42,26 @@
 └──────────────┘         └──────────────┘         └─────────────┘
 ```
 
+**DLL pipe architecture:**
+- Background thread owns pipe connection and reads continuously
+- Commands queued in thread-safe queue, processed on main thread
+- Window subclassing wakes main thread when commands arrive
+- Responses sent directly on main thread
+
 **Sequential turn flow:**
 1. DLL sends `turn_start` with game state via named pipe
 2. Orchestrator caches state and exposes via MCP HTTP server
-3. LLM queries state and sends actions one at a time
+3. LLM queries state (`get_units`, `get_cities`, etc.) and sends actions
 4. Each action is forwarded to DLL immediately, response returned to LLM
-5. LLM calls `end_turn` when done
-6. Orchestrator signals DLL to advance turn
+5. DLL forwards game events via hooks (notifications, popups, diplomacy, tech)
+6. LLM calls `end_turn` when done
+7. Orchestrator signals DLL to advance turn
+
+**DLL hooks** (forward game events to pipe):
+- `SendNotificationToPipe`: Player notifications
+- `SendPopupToPipe`/`AddPopupWithPipe`: UI popups
+- `SendDiplomaticMessageToPipe`: Diplomacy with deal details
+- `SendTechResearchedToPipe`: Technology completion
 
 See `docs/protocol.md` for message formats.
 
@@ -56,4 +76,5 @@ See `docs/protocol.md` for message formats.
 ## Security & Configuration Tips
 - Pipe name: Default `\\.\pipe\civv_llm`; override with `--pipe` flag or `CIVV_PIPE` env var.
 - Validation: Sanitize inbound JSON; DLL validates action legality.
-- Concurrency: Pipe I/O runs in background thread; main thread handles HTTP.
+- DLL concurrency: Pipe I/O runs in background thread; commands processed on main game thread.
+- Python concurrency: Pipe I/O runs in background thread; main thread handles HTTP/MCP.
