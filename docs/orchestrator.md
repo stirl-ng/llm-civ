@@ -82,7 +82,7 @@ curl -X POST http://localhost:8765/tool \
 # End turn (turn parameter is required)
 curl -X POST http://localhost:8765/tool \
   -H "Content-Type: application/json" \
-  -d '{"tool": "end_turn", "arguments": {"turn": 7, "notes": "Moved warrior, started granary"}}'
+  -d '{"tool": "end_turn", "arguments": {"turn": 7}}'
 ```
 
 ## Available Tools

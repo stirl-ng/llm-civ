@@ -71,7 +71,7 @@ Currently there's no parity between what gets logged, what the LLM receives, and
 │    (from LLM)   │     (direction: "outgoing")
 │                 │
 │ 3. Query log    │◄─── get_notifications()
-│    for response │     get_message_history()
+│    for response │     get_log()
 │                 │
 │ 4. Log result   │───► dll_messages.jsonl
 │    (to LLM)     │     (direction: "incoming")
@@ -215,7 +215,7 @@ def _get_notifications(self) -> dict[str, Any]:
 
 ```python
 {
-    "name": "get_message_history",
+    "name": "get_log",
     "description": "Get message history from the log.",
     "parameters": {
         "message_type": "optional string",
