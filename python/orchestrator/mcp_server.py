@@ -100,7 +100,17 @@ AVAILABLE_TOOLS = [
     {
         "name": "end_turn",
         "description": "Signal that you are done with your turn. Requires turn number to prevent accidental progression.",
-        "parameters": {"notes": "optional string", "turn": "required int"},
+        "parameters": {"turn": "required int"},
+    },
+    {
+        "name": "add_note",
+        "description": "Add a note to the log. Notes are stored in the JSONL log and can be retrieved with get_log(type='note'). Returns a note_id that can be used to delete the note later.",
+        "parameters": {"content": "required string"},
+    },
+    {
+        "name": "delete_note",
+        "description": "Delete a note by its note_id. The note will be filtered out when retrieving notes with get_log(type='note').",
+        "parameters": {"note_id": "required string"},
     },
     {
         "name": "get_notifications",
@@ -108,10 +118,10 @@ AVAILABLE_TOOLS = [
         "parameters": [],
     },
     {
-        "name": "get_message_history",
-        "description": "Get message history from the log with optional filters. Returns messages in the same format as they appear in the log. By default, filters to current game only.",
+        "name": "get_log",
+        "description": "Get log entries from the JSONL log with optional filters. Returns messages in the same format as they appear in the log. By default, filters to current game only. Use get_log(type='note') to retrieve notes.",
         "parameters": {
-            "message_type": "optional string (e.g., 'turn_start', 'notification', 'action_result')",
+            "message_type": "optional string (e.g., 'turn_start', 'notification', 'action_result', 'note')",
             "direction": "optional string: 'incoming'|'outgoing'",
             "min_turn": "optional int",
             "player_id": "optional int",
@@ -166,7 +176,6 @@ class CivMCPServer:
 
         # Turn management
         self._pipe_conn: Optional["PipeConnection"] = None
-        self._turn_notes: str = ""
         self._current_turn_number: Optional[int] = None  # Track which turn is active
         self._first_turn_of_game: Optional[int] = None  # Track first turn of current game session
         self._end_turn_in_progress = False  # Track if an end_turn request is currently being processed
@@ -217,10 +226,6 @@ class CivMCPServer:
         logger.debug(f"Turn {turn_num} state updated (Player {player_id})")
 
 
-    def get_turn_notes(self) -> str:
-        """Get notes from the completed turn."""
-        with self._lock:
-            return self._turn_notes
     
     @property
     def turn_active(self) -> bool:
@@ -334,7 +339,7 @@ class CivMCPServer:
             "get_resources": lambda: self._get_resources_dummy(),
             "get_state_refresh": lambda: self._get_state_refresh_dummy(),
             "get_notifications": lambda: self._get_notifications(),
-            "get_message_history": lambda: self._get_message_history(
+            "get_log": lambda: self._get_log(
                 message_type=arguments.get("message_type"),
                 direction=arguments.get("direction"),
                 min_turn=arguments.get("min_turn"),
@@ -371,7 +376,6 @@ class CivMCPServer:
 
         # Turn control
         if name == "end_turn":
-            notes = arguments.get("notes", "")
             turn = arguments.get("turn")
             if turn is None:
                 error = {"error": "Missing required parameter 'turn'", "status": "error"}
@@ -381,8 +385,39 @@ class CivMCPServer:
                 error = {"error": f"Parameter 'turn' must be an integer, got {type(turn).__name__}", "status": "error"}
                 self._log_tool_result_to_llm(name, error)
                 return error
-            result = self._end_turn(turn=turn, notes=notes)
+            result = self._end_turn(turn=turn)
             # end_turn already logs to JSONL, but also log as tool result
+            self._log_tool_result_to_llm(name, result)
+            return result
+
+        # Note tools
+        if name == "add_note":
+            content = arguments.get("content")
+            if content is None:
+                error = {"error": "Missing required parameter 'content'"}
+                self._log_tool_result_to_llm(name, error)
+                return error
+            if not isinstance(content, str):
+                error = {"error": f"Parameter 'content' must be a string, got {type(content).__name__}"}
+                self._log_tool_result_to_llm(name, error)
+                return error
+            result = self._add_note(content=content)
+            self._log_tool_result(name, result, is_error="error" in result)
+            self._log_tool_result_to_llm(name, result)
+            return result
+
+        if name == "delete_note":
+            note_id = arguments.get("note_id")
+            if note_id is None:
+                error = {"error": "Missing required parameter 'note_id'"}
+                self._log_tool_result_to_llm(name, error)
+                return error
+            if not isinstance(note_id, str):
+                error = {"error": f"Parameter 'note_id' must be a string, got {type(note_id).__name__}"}
+                self._log_tool_result_to_llm(name, error)
+                return error
+            result = self._delete_note(note_id=note_id)
+            self._log_tool_result(name, result, is_error="error" in result)
             self._log_tool_result_to_llm(name, result)
             return result
 
@@ -496,14 +531,13 @@ class CivMCPServer:
             logger.error(f"Exception sending action: {e}", exc_info=True)
             return {"error": f"Failed to send action: {e}"}
 
-    def _end_turn(self, turn: int, notes: str = "") -> dict[str, Any]:
+    def _end_turn(self, turn: int) -> dict[str, Any]:
         """Signal that the LLM is done with its turn and wait for DLL confirmation.
         
         The DLL might block the end-turn request if there are pending units, 
         tech choices, etc. This method waits for the authoritative result.
         
         Args:
-            notes: Optional notes string to attach to the turn
             turn: Required turn number. Must match current turn to prevent accidental progression.
         """
         with self._lock:
@@ -545,7 +579,6 @@ class CivMCPServer:
             if status == "success":
                 # DLL confirmed turn ended successfully
                 with self._lock:
-                    self._turn_notes = notes
                     self._end_turn_in_progress = False
                 
                 logger.info(f"✅ Turn {turn} ended successfully (confirmed by DLL)")
@@ -662,7 +695,7 @@ class CivMCPServer:
         """Dummy response - will be replaced with DLL call."""
         return {"message": "Dummy response - state caching removed, will query DLL directly"}
     
-    def _get_message_history(
+    def _get_log(
         self,
         message_type: Optional[str] = None,
         direction: Optional[str] = None,
@@ -673,13 +706,13 @@ class CivMCPServer:
         current_game_only: bool = True,
         limit: int = 100
     ) -> dict[str, Any]:
-        """Get message history from the log with optional filters.
+        """Get log entries from the JSONL log with optional filters.
 
         Returns messages in the same format as they appear in the log,
         ensuring parity between what's logged and what the LLM receives.
 
         Args:
-            message_type: Optional message type to filter by
+            message_type: Optional message type to filter by (e.g., 'note', 'turn_start', 'notification')
             direction: Optional direction filter ('incoming' or 'outgoing')
             min_turn: Optional minimum turn number
             player_id: Optional player ID filter
@@ -710,6 +743,18 @@ class CivMCPServer:
         # Filter by direction if specified
         if direction:
             messages = [msg for msg in messages if msg.get("direction") == direction]
+
+        # If retrieving notes, filter out deleted ones
+        if message_type == "note":
+            # Get all note_deleted entries (don't filter by game_id/session_id since deletions
+            # should work across games/sessions - note_id is globally unique)
+            deleted_notes = self._message_logger.get_messages(
+                message_type="note_deleted"
+            )
+            deleted_note_ids = {msg.get("note_id") for msg in deleted_notes if msg.get("note_id")}
+            
+            # Filter out notes that have been deleted
+            messages = [msg for msg in messages if msg.get("note_id") not in deleted_note_ids]
 
         # Return most recent messages first, limited
         messages = list(reversed(messages))[:limit]
@@ -865,4 +910,77 @@ class CivMCPServer:
                 "timestamp": time.time(),
                 "turn_number": turn_number
             }
+    
+    def _add_note(self, content: str) -> dict[str, Any]:
+        """Add a note to the JSONL log.
+        
+        Args:
+            content: The note content to log
+            
+        Returns:
+            Dictionary with status, confirmation, and note_id
+        """
+        from datetime import datetime
+        
+        # Generate unique ID for the note
+        note_id = str(uuid.uuid4())
+        
+        # Create note log entry
+        note_log = {
+            "type": "note",
+            "direction": "outgoing",
+            "timestamp": datetime.now().timestamp(),
+            "note_id": note_id,
+            "content": content
+        }
+        
+        # Add turn if available
+        with self._lock:
+            if self._current_turn_number is not None:
+                note_log["turn"] = self._current_turn_number
+        
+        # Log to JSONL
+        self._message_logger.log_message(note_log)
+        
+        logger.debug(f"Note logged ({len(content)} characters, note_id={note_id})")
+        return {
+            "status": "success",
+            "message": "Note logged",
+            "note_id": note_id,
+            "content_length": len(content)
+        }
+    
+    def _delete_note(self, note_id: str) -> dict[str, Any]:
+        """Delete a note by logging a deletion entry.
+        
+        Args:
+            note_id: The unique ID of the note to delete
+            
+        Returns:
+            Dictionary with status and confirmation
+        """
+        from datetime import datetime
+        
+        # Create deletion log entry
+        deletion_log = {
+            "type": "note_deleted",
+            "direction": "outgoing",
+            "timestamp": datetime.now().timestamp(),
+            "note_id": note_id
+        }
+        
+        # Add turn if available
+        with self._lock:
+            if self._current_turn_number is not None:
+                deletion_log["turn"] = self._current_turn_number
+        
+        # Log to JSONL
+        self._message_logger.log_message(deletion_log)
+        
+        logger.debug(f"Note deletion logged (note_id={note_id})")
+        return {
+            "status": "success",
+            "message": "Note deleted",
+            "note_id": note_id
+        }
     
