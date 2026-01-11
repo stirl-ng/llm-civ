@@ -375,6 +375,43 @@ class CivMCPServer:
         # Action tools
         "send_action": ("_send_action", {"action": "required dict with 'kind' field"}),
         "end_turn": ("_end_turn", {"turn": "required int"}),
+        # Popup choice tools
+        "select_pantheon": ("_select_pantheon", {
+            "belief_id": "required int - ID of the belief to select",
+            "player_id": "optional int - player ID (defaults to active player)"
+        }),
+        "found_religion": ("_found_religion", {
+            "religion_id": "required int - ID of the religion to found",
+            "founder_belief_id": "required int - ID of the founder belief",
+            "follower_belief_id": "required int - ID of the follower belief",
+            "pantheon_belief_id": "optional int - ID of pantheon belief (only if player doesn't have one)",
+            "bonus_belief_id": "optional int - ID of bonus belief (for Byzantium trait)",
+            "religion_name": "optional string - custom name for the religion",
+            "city_x": "optional int - X coordinate of holy city",
+            "city_y": "optional int - Y coordinate of holy city",
+            "player_id": "optional int - player ID (defaults to active player)"
+        }),
+        "enhance_religion": ("_enhance_religion", {
+            "follower2_belief_id": "required int - ID of the second follower belief",
+            "enhancer_belief_id": "required int - ID of the enhancer belief",
+            "player_id": "optional int - player ID (defaults to active player)"
+        }),
+        "city_capture_decision": ("_city_capture_decision", {
+            "city_id": "required int - ID of the captured city",
+            "action": "required string - one of: 'puppet', 'annex', 'raze', 'destroy', 'liberate'",
+            "liberate_to": "optional int - player ID to liberate the city to (required for 'liberate' action)",
+            "player_id": "optional int - player ID (defaults to active player)"
+        }),
+        "set_city_production": ("_set_city_production", {
+            "city_id": "required int - ID of the city",
+            "order_type": "required int - 0=TRAIN (unit), 1=CONSTRUCT (building), 2=CREATE (project), 3=MAINTAIN (process)",
+            "item_id": "required int - ID of the unit/building/project/process to produce",
+            "player_id": "optional int - player ID (defaults to active player)"
+        }),
+        "choose_tech": ("_choose_tech", {
+            "tech_id": "required int - ID of the technology to research",
+            "player_id": "optional int - player ID (defaults to active player)"
+        }),
     }
 
     # Placeholder tools - description only, not yet implemented in DLL
@@ -532,6 +569,333 @@ class CivMCPServer:
             with self._lock:
                 self._end_turn_in_progress = False
             return {"error": f"Failed to end turn: {e}"}
+
+    # -------------------------------------------------------------------------
+    # Popup Choice Tools
+    # -------------------------------------------------------------------------
+
+    def _select_pantheon(self, request_id: str, args: dict[str, Any]) -> dict[str, Any]:
+        """Select a pantheon belief for the player.
+
+        Use this when the game shows a 'choose_pantheon' popup. The available
+        beliefs and their IDs are sent via the popup_choice_needed message.
+
+        Args:
+            request_id: Request ID to use for request/response matching
+            args: Tool arguments containing belief_id and optional player_id
+        """
+        belief_id = self._require_param(args, "belief_id", int)
+        player_id = args.get("player_id")  # Optional, defaults to active player in DLL
+
+        pipe = self._get_pipe()
+
+        message = {
+            "type": "select_pantheon",
+            "request_id": request_id,
+            "belief_id": belief_id,
+        }
+        if player_id is not None:
+            message["player_id"] = player_id
+
+        try:
+            result = pipe.send_request(message, timeout=10.0)
+
+            if result.get("success"):
+                return {
+                    "status": "success",
+                    "belief_id": result.get("belief_id"),
+                    "belief_name": result.get("belief_name"),
+                    "player_id": result.get("player_id"),
+                    "message": f"Pantheon founded with belief: {result.get('belief_name', 'Unknown')}"
+                }
+            else:
+                error = result.get("error", {})
+                return {
+                    "status": "error",
+                    "error": error.get("message", "Unknown error"),
+                    "code": error.get("code", "UNKNOWN"),
+                }
+        except Exception as e:
+            return {"status": "error", "error": f"Failed to select pantheon: {e}"}
+
+    def _found_religion(self, request_id: str, args: dict[str, Any]) -> dict[str, Any]:
+        """Found a new religion for the player.
+
+        Use this when the game shows a 'found_religion' popup. The available
+        religions and beliefs are sent via the popup_choice_needed message.
+
+        Args:
+            request_id: Request ID to use for request/response matching
+            args: Tool arguments containing religion and belief IDs
+        """
+        religion_id = self._require_param(args, "religion_id", int)
+        founder_belief_id = self._require_param(args, "founder_belief_id", int)
+        follower_belief_id = self._require_param(args, "follower_belief_id", int)
+        pantheon_belief_id = args.get("pantheon_belief_id")
+        bonus_belief_id = args.get("bonus_belief_id")
+        religion_name = args.get("religion_name")
+        city_x = args.get("city_x")
+        city_y = args.get("city_y")
+        player_id = args.get("player_id")
+
+        pipe = self._get_pipe()
+
+        message: dict[str, Any] = {
+            "type": "found_religion",
+            "request_id": request_id,
+            "religion_id": religion_id,
+            "founder_belief_id": founder_belief_id,
+            "follower_belief_id": follower_belief_id,
+        }
+        if pantheon_belief_id is not None:
+            message["pantheon_belief_id"] = pantheon_belief_id
+        if bonus_belief_id is not None:
+            message["bonus_belief_id"] = bonus_belief_id
+        if religion_name is not None:
+            message["religion_name"] = religion_name
+        if city_x is not None:
+            message["city_x"] = city_x
+        if city_y is not None:
+            message["city_y"] = city_y
+        if player_id is not None:
+            message["player_id"] = player_id
+
+        try:
+            result = pipe.send_request(message, timeout=10.0)
+
+            if result.get("success"):
+                return {
+                    "status": "success",
+                    "religion_id": result.get("religion_id"),
+                    "religion_name": result.get("religion_name"),
+                    "player_id": result.get("player_id"),
+                    "message": f"Religion founded: {result.get('religion_name', 'Unknown')}"
+                }
+            else:
+                error = result.get("error", {})
+                return {
+                    "status": "error",
+                    "error": error.get("message", "Unknown error"),
+                    "code": error.get("code", "UNKNOWN"),
+                    "reason": error.get("reason"),
+                }
+        except Exception as e:
+            return {"status": "error", "error": f"Failed to found religion: {e}"}
+
+    def _enhance_religion(self, request_id: str, args: dict[str, Any]) -> dict[str, Any]:
+        """Enhance an existing religion with additional beliefs.
+
+        Use this when the game shows an 'enhance_religion' popup. The available
+        beliefs are sent via the popup_choice_needed message.
+
+        Args:
+            request_id: Request ID to use for request/response matching
+            args: Tool arguments containing belief IDs
+        """
+        follower2_belief_id = self._require_param(args, "follower2_belief_id", int)
+        enhancer_belief_id = self._require_param(args, "enhancer_belief_id", int)
+        player_id = args.get("player_id")
+
+        pipe = self._get_pipe()
+
+        message: dict[str, Any] = {
+            "type": "enhance_religion",
+            "request_id": request_id,
+            "follower2_belief_id": follower2_belief_id,
+            "enhancer_belief_id": enhancer_belief_id,
+        }
+        if player_id is not None:
+            message["player_id"] = player_id
+
+        try:
+            result = pipe.send_request(message, timeout=10.0)
+
+            if result.get("success"):
+                return {
+                    "status": "success",
+                    "religion_id": result.get("religion_id"),
+                    "religion_name": result.get("religion_name"),
+                    "player_id": result.get("player_id"),
+                    "message": f"Religion enhanced: {result.get('religion_name', 'Unknown')}"
+                }
+            else:
+                error = result.get("error", {})
+                return {
+                    "status": "error",
+                    "error": error.get("message", "Unknown error"),
+                    "code": error.get("code", "UNKNOWN"),
+                    "reason": error.get("reason"),
+                }
+        except Exception as e:
+            return {"status": "error", "error": f"Failed to enhance religion: {e}"}
+
+    def _city_capture_decision(self, request_id: str, args: dict[str, Any]) -> dict[str, Any]:
+        """Make a decision about a captured city.
+
+        Use this when the game shows a 'city_capture' popup. The available
+        actions are sent via the popup_choice_needed message.
+
+        Actions:
+        - puppet: Make the city a puppet (limited control, no unhappiness penalty)
+        - annex: Annex the city (full control, but adds unhappiness)
+        - raze: Raze the city to the ground (city is destroyed over time)
+        - destroy: Destroy the city immediately (one-city challenge only)
+        - liberate: Return the city to its original owner (requires liberate_to)
+
+        Args:
+            request_id: Request ID to use for request/response matching
+            args: Tool arguments containing city_id, action, and optional liberate_to
+        """
+        city_id = self._require_param(args, "city_id", int)
+        action = self._require_param(args, "action", str)
+        liberate_to = args.get("liberate_to")
+        player_id = args.get("player_id")
+
+        # Validate action
+        valid_actions = ["puppet", "annex", "raze", "destroy", "liberate"]
+        if action not in valid_actions:
+            raise ToolError(f"Invalid action '{action}'. Must be one of: {', '.join(valid_actions)}")
+
+        if action == "liberate" and liberate_to is None:
+            raise ToolError("liberate_to is required when action is 'liberate'")
+
+        pipe = self._get_pipe()
+
+        message: dict[str, Any] = {
+            "type": "city_capture_decision",
+            "request_id": request_id,
+            "city_id": city_id,
+            "action": action,
+        }
+        if liberate_to is not None:
+            message["liberate_to"] = liberate_to
+        if player_id is not None:
+            message["player_id"] = player_id
+
+        try:
+            result = pipe.send_request(message, timeout=10.0)
+
+            if result.get("success"):
+                return {
+                    "status": "success",
+                    "city_id": result.get("city_id"),
+                    "action": result.get("action"),
+                    "player_id": result.get("player_id"),
+                    "message": f"City decision made: {result.get('action', 'Unknown')}"
+                }
+            else:
+                error = result.get("error", {})
+                return {
+                    "status": "error",
+                    "error": error.get("message", "Unknown error"),
+                    "code": error.get("code", "UNKNOWN"),
+                }
+        except Exception as e:
+            return {"status": "error", "error": f"Failed to make city decision: {e}"}
+
+    def _set_city_production(self, request_id: str, args: dict[str, Any]) -> dict[str, Any]:
+        """Set production for a city.
+
+        Use this when the game shows a 'choose_production' popup. The available
+        items and their IDs are sent via the popup_choice_needed message.
+
+        Order types:
+        - 0 = ORDER_TRAIN (units)
+        - 1 = ORDER_CONSTRUCT (buildings)
+        - 2 = ORDER_CREATE (projects/wonders)
+        - 3 = ORDER_MAINTAIN (processes like Wealth, Research, etc.)
+
+        Args:
+            request_id: Request ID to use for request/response matching
+            args: Tool arguments containing city_id, order_type, and item_id
+        """
+        city_id = self._require_param(args, "city_id", int)
+        order_type = self._require_param(args, "order_type", int)
+        item_id = self._require_param(args, "item_id", int)
+        player_id = args.get("player_id")
+
+        # Validate order_type
+        if order_type not in [0, 1, 2, 3]:
+            raise ToolError(f"Invalid order_type {order_type}. Must be 0-3.")
+
+        pipe = self._get_pipe()
+
+        message: dict[str, Any] = {
+            "type": "set_city_production",
+            "request_id": request_id,
+            "city_id": city_id,
+            "order_type": order_type,
+            "item_id": item_id,
+        }
+        if player_id is not None:
+            message["player_id"] = player_id
+
+        try:
+            result = pipe.send_request(message, timeout=10.0)
+
+            if result.get("success"):
+                return {
+                    "status": "success",
+                    "city_id": result.get("city_id"),
+                    "order_type": result.get("order_type"),
+                    "item_id": result.get("item_id"),
+                    "item_name": result.get("item_name"),
+                    "player_id": result.get("player_id"),
+                    "message": f"Production set to: {result.get('item_name', 'Unknown')}"
+                }
+            else:
+                error = result.get("error", {})
+                return {
+                    "status": "error",
+                    "error": error.get("message", "Unknown error"),
+                    "code": error.get("code", "UNKNOWN"),
+                }
+        except Exception as e:
+            return {"status": "error", "error": f"Failed to set city production: {e}"}
+
+    def _choose_tech(self, request_id: str, args: dict[str, Any]) -> dict[str, Any]:
+        """Select a technology to research.
+
+        Use this when the game shows a 'choose_tech' popup. The available
+        technologies and their IDs are sent via the popup_choice_needed message.
+
+        Args:
+            request_id: Request ID to use for request/response matching
+            args: Tool arguments containing tech_id
+        """
+        tech_id = self._require_param(args, "tech_id", int)
+        player_id = args.get("player_id")
+
+        pipe = self._get_pipe()
+
+        message: dict[str, Any] = {
+            "type": "choose_tech",
+            "request_id": request_id,
+            "tech_id": tech_id,
+        }
+        if player_id is not None:
+            message["player_id"] = player_id
+
+        try:
+            result = pipe.send_request(message, timeout=10.0)
+
+            if result.get("success"):
+                return {
+                    "status": "success",
+                    "tech_id": result.get("tech_id"),
+                    "tech_name": result.get("tech_name"),
+                    "player_id": result.get("player_id"),
+                    "message": f"Now researching: {result.get('tech_name', 'Unknown')}"
+                }
+            else:
+                error = result.get("error", {})
+                return {
+                    "status": "error",
+                    "error": error.get("message", "Unknown error"),
+                    "code": error.get("code", "UNKNOWN"),
+                }
+        except Exception as e:
+            return {"status": "error", "error": f"Failed to choose tech: {e}"}
 
     # -------------------------------------------------------------------------
     # DLL Query Tools
