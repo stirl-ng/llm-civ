@@ -2,6 +2,45 @@
 
 This document establishes patterns and conventions for the LLM pipe integration in this Civ V mod.
 
+## Design Philosophy: LLM as a Player, Not a Popup Responder
+
+**Key Principle**: The LLM should have access to the same information as a human player, at the same time, through MCP query tools - NOT by waiting for popup events.
+
+### What this means:
+- **Humans** can look at their cities anytime and see what's available to build
+- **LLM** should be able to call `get_city_production` anytime to see the same info
+- **Humans** can open the tech tree and see what's researchable
+- **LLM** should be able to call `get_available_techs` (or similar) anytime
+
+### Popups are UI conveniences, not data sources:
+- Popups prompt humans to make decisions, but humans don't NEED them
+- The LLM should proactively query state and take actions, not wait for `popup_choice_needed` events
+- Popup hooks (`choose_tech`, `choose_production`) are fallbacks, not the primary flow
+
+### Implementation pattern:
+1. **Query tools** (`get_city_production`, `get_available_techs`) - LLM asks for info when needed
+2. **Action tools** (`set_city_production`, `choose_tech`) - LLM takes action directly
+3. **Popup events** - Optional notifications, auto-closed by Lua, LLM doesn't depend on them
+
+This mimics how a skilled human plays: they already know what they want to build before the popup appears.
+
+## Known Issues (TODO)
+
+### 1. adopt_policy doesn't deduct culture
+`SetHasPolicy()` sets the policy but doesn't deduct culture cost. Need to use proper game method (check `CvPlayerPolicies::DoAdoptPolicy` or network message handler).
+
+### 2. Unhandled popups block end_turn
+These popups block `end_turn` but aren't reported via pipe:
+- Meet civilization dialog
+- Goody hut rewards
+- Natural wonder discovered
+- Policy screen (when open in UI)
+
+Need to add auto-close handlers in Lua for these.
+
+### 3. NO_ENDTURN_BLOCKING_TYPE gives no info
+When `blocking_type_id` is -1, we get no diagnostic info about what's blocking. Need to investigate what causes this state.
+
 ## Architecture Overview
 
 The LLM integration uses a named pipe (`\\.\pipe\civv_llm`) for bidirectional communication:

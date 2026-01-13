@@ -418,6 +418,8 @@ DASHBOARD_HTML = """
                 <div class="command-section">
                     <h3>Actions</h3>
                     <button class="command-btn action" onclick="endTurn()">End Turn</button>
+                    <button class="command-btn action" onclick="quickSetScoutProduction()">Set City Production to Scout</button>
+                    <button class="command-btn action" onclick="quickSetMiningResearch()">Set Research to Mining</button>
                 </div>
 
                 <div class="command-section">
@@ -550,6 +552,147 @@ DASHBOARD_HTML = """
                 // Now call end_turn with the current turn number
                 resultDiv.textContent = `Ending turn ${sessionData.turn_number}...`;
                 await runCommand('end_turn', {turn: sessionData.turn_number});
+            } catch (e) {
+                resultDiv.className = 'command-result error';
+                resultDiv.textContent = `Error: ${e.message}`;
+                scheduleAutoHide();
+            }
+        }
+
+        // Quick action: Set first city production to Scout
+        async function quickSetScoutProduction() {
+            const resultDiv = document.getElementById('commandResult');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'command-result';
+            resultDiv.textContent = 'Loading cities...';
+
+            try {
+                // Step 1: Get cities
+                const citiesResponse = await fetch(`${MCP_BASE}/tool`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({tool: 'get_cities', arguments: {}})
+                });
+                const citiesData = await citiesResponse.json();
+                const citiesResult = citiesData.result || citiesData;
+
+                if (citiesData.status === 'error' || citiesResult.error || !citiesResult.cities || citiesResult.cities.length === 0) {
+                    resultDiv.className = 'command-result error';
+                    resultDiv.textContent = `Error: ${citiesResult.error || 'No cities found'}`;
+                    scheduleAutoHide();
+                    return;
+                }
+
+                // Step 2: Get first city
+                const firstCity = citiesResult.cities[0];
+                const cityId = firstCity.id;
+                resultDiv.textContent = `Getting production options for ${firstCity.name}...`;
+
+                // Step 3: Get production options for this city
+                const prodResponse = await fetch(`${MCP_BASE}/tool`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({tool: 'get_city_production', arguments: {city_id: cityId}})
+                });
+                const prodData = await prodResponse.json();
+                const prodResult = prodData.result || prodData;
+
+                if (prodData.status === 'error' || prodResult.error) {
+                    resultDiv.className = 'command-result error';
+                    resultDiv.textContent = `Error: ${prodResult.error || JSON.stringify(prodResult)}`;
+                    scheduleAutoHide();
+                    return;
+                }
+
+                // Step 4: Find Scout in trainable units
+                const trainableUnits = prodResult.trainable_units || [];
+                const scoutUnit = trainableUnits.find(unit => 
+                    unit.name && unit.name.toLowerCase().includes('scout')
+                );
+
+                if (!scoutUnit) {
+                    resultDiv.className = 'command-result error';
+                    resultDiv.textContent = `Error: Scout not found in trainable units for ${firstCity.name}`;
+                    scheduleAutoHide();
+                    return;
+                }
+
+                // Step 5: Set production to Scout
+                resultDiv.textContent = `Setting ${firstCity.name} production to ${scoutUnit.name}...`;
+                const setProdResponse = await fetch(`${MCP_BASE}/tool`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        tool: 'set_city_production',
+                        arguments: { city_id: cityId, order_type: 0, item_id: scoutUnit.id }
+                    })
+                });
+                const setProdData = await setProdResponse.json();
+                const setProdResult = setProdData.result || setProdData;
+                const isError = setProdData.status === 'error' || setProdResult.error;
+                resultDiv.className = isError ? 'command-result error' : 'command-result success';
+                resultDiv.textContent = JSON.stringify(setProdResult, null, 2);
+                scheduleAutoHide();
+            } catch (e) {
+                resultDiv.className = 'command-result error';
+                resultDiv.textContent = `Error: ${e.message}`;
+                scheduleAutoHide();
+            }
+        }
+
+        // Quick action: Set research to Mining
+        async function quickSetMiningResearch() {
+            const resultDiv = document.getElementById('commandResult');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'command-result';
+            resultDiv.textContent = 'Loading available techs...';
+
+            try {
+                // Step 1: Get game state to find available techs
+                const stateResponse = await fetch(`${MCP_BASE}/tool`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({tool: 'get_game_state', arguments: {}})
+                });
+                const stateData = await stateResponse.json();
+                const stateResult = stateData.result || stateData;
+
+                if (stateData.status === 'error' || stateResult.error) {
+                    resultDiv.className = 'command-result error';
+                    resultDiv.textContent = `Error: ${stateResult.error || JSON.stringify(stateResult)}`;
+                    scheduleAutoHide();
+                    return;
+                }
+
+                // Step 2: Find Mining tech
+                const availableTechs = stateResult.available_techs || stateResult.researchable_techs || [];
+                const miningTech = availableTechs.find(tech => 
+                    tech.name && tech.name.toLowerCase().includes('mining')
+                );
+
+                if (!miningTech) {
+                    resultDiv.className = 'command-result error';
+                    resultDiv.textContent = `Error: Mining tech not found in available techs`;
+                    scheduleAutoHide();
+                    return;
+                }
+
+                // Step 3: Choose Mining tech
+                resultDiv.textContent = `Setting research to ${miningTech.name}...`;
+                const chooseTechResponse = await fetch(`${MCP_BASE}/tool`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        tool: 'choose_tech',
+                        arguments: { tech_id: miningTech.id }
+                    })
+                });
+                const chooseTechData = await chooseTechResponse.json();
+                const chooseTechResult = chooseTechData.result || chooseTechData;
+                const isError = chooseTechData.status === 'error' || chooseTechResult.error;
+                resultDiv.className = isError ? 'command-result error' : 'command-result success';
+                resultDiv.textContent = JSON.stringify(chooseTechResult, null, 2);
+                scheduleAutoHide();
             } catch (e) {
                 resultDiv.className = 'command-result error';
                 resultDiv.textContent = `Error: ${e.message}`;

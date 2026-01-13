@@ -347,6 +347,13 @@ class CivMCPServer:
         "get_city_production": ("_get_city_production", {"city_id": "required int"}),
         "get_units": ("_get_units", {"player_id": "optional int"}),
         "get_notifications": ("_get_notifications", {}),
+        "get_available_techs": ("_get_available_techs", {"player_id": "optional int"}),
+        "get_available_policies": ("_get_available_policies", {"player_id": "optional int"}),
+        "adopt_policy": ("_adopt_policy", {
+            "policy_id": "optional int - ID of policy to adopt (use this OR branch_id)",
+            "branch_id": "optional int - ID of branch to unlock (use this OR policy_id)",
+            "player_id": "optional int - player ID (defaults to active player)"
+        }),
         "ping": ("_ping", {}),
         # Log tools (local)
         "get_log": ("_get_log", {
@@ -691,6 +698,39 @@ class CivMCPServer:
             "session_id": self.current_session_id,
             "player_id": self.current_player_id,
         }
+
+    def _get_available_techs(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Get available technologies for research from DLL."""
+        player_id = args.get("player_id")
+        if player_id is not None:
+            return self._send_pipe_request("get_available_techs", player_id=player_id)
+        return self._send_pipe_request("get_available_techs")
+
+    def _get_available_policies(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Get available policy branches and policies from DLL."""
+        player_id = args.get("player_id")
+        if player_id is not None:
+            return self._send_pipe_request("get_available_policies", player_id=player_id)
+        return self._send_pipe_request("get_available_policies")
+
+    def _adopt_policy(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Adopt a policy or unlock a policy branch."""
+        policy_id = args.get("policy_id")
+        branch_id = args.get("branch_id")
+        player_id = args.get("player_id")
+
+        if policy_id is None and branch_id is None:
+            raise ToolError("Must provide either policy_id or branch_id")
+
+        kwargs: dict[str, Any] = {}
+        if policy_id is not None:
+            kwargs["policy_id"] = policy_id
+        if branch_id is not None:
+            kwargs["branch_id"] = branch_id
+        if player_id is not None:
+            kwargs["player_id"] = player_id
+
+        return self._send_pipe_request("adopt_policy", **kwargs)
 
     def _get_log(self, args: dict[str, Any]) -> dict[str, Any]:
         """Get log entries from the JSONL log with optional filters."""
