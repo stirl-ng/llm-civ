@@ -1,0 +1,16 @@
+name: gemini-demo
+backend:
+  kind: gemini
+  model: gemini-3-flash-preview
+  # api_key can be set here or via GEMINI_API_KEY env var
+  api_key: AIzaSyCC7CVwszH30nBvBAKBjpgB88meb2Ex0P4
+tools:
+  - kind: rag
+    corpus:
+      - "Civilization V policies: Tradition, Liberty, Honor."
+strategy:
+  name: vanilla
+  temperature: 0.2
+orchestrator:
+  pipe: "\\\\.\\pipe\\civv_llm"
+

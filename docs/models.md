@@ -22,7 +22,8 @@ Config
 Example
 -------
 
-- `python -m experiments.run --config python/configs/experiments/openai.yaml --dry-run`
+- `python -m experiments.run --config openai --dry-run`
+- Or full path: `python -m experiments.run --config python/configs/experiments/openai.yaml --dry-run`
 - Or orchestrator: `python -m orchestrator --agent-config python/configs/experiments/openai.yaml`
 
 Install

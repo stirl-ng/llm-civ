@@ -12,17 +12,19 @@ Quickstart
   - `pip install -r python/requirements.txt`
 
 - Dry run the experiment runner (no game needed):
-  - `python -m experiments.run --config python/configs/experiments/minimal.yaml --dry-run`
+  - `python -m experiments.run --config minimal --dry-run`
+  - Or use full path: `python -m experiments.run --config python/configs/experiments/minimal.yaml --dry-run`
 
 - Live run (wired to orchestrator/pipe):
   - Start the orchestrator: `cd python && python -m orchestrator`
   - Build and enable the DLL mod in Civ V (BNW).
-  - Run: `python -m experiments.run --config python/configs/experiments/minimal.yaml`
+  - Run: `python -m experiments.run --config minimal`
+  - Or use short names: `python -m experiments.run --config gemini`
 
 Config Schema
 -------------
 
-- Schema: `schemas/experiment.schema.json`
+- Schema: `python/schemas/experiment.schema.json`
 - Key sections:
   - `backend`: model adapter (`kind: dummy` for offline testing).
   - `tools`: list of tools (`kind: rag|web|mcp`) with per-tool params.

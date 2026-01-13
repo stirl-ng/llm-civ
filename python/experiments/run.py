@@ -13,8 +13,8 @@ from agent_runtime import Agent, get_model, build_tools
 from agent_runtime.strategies.vanilla import VanillaStrategy
 
 
-def load_schema(repo_root: Path, name: str) -> Dict[str, Any]:
-    schema_path = repo_root / "schemas" / name
+def load_schema(python_root: Path, name: str) -> Dict[str, Any]:
+    schema_path = python_root / "schemas" / name
     with schema_path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -23,8 +23,25 @@ def validate(obj: Dict[str, Any], schema: Dict[str, Any]) -> None:
     Draft202012Validator(schema).validate(obj)
 
 
-def load_config(path: Path) -> Dict[str, Any]:
-    with path.open("r", encoding="utf-8") as f:
+def load_config(config_arg: str) -> Dict[str, Any]:
+    """
+    Load config from a path or short name.
+    
+    If config_arg is a short name (no path separators), looks for it in
+    python/configs/experiments/{name}.yaml. Otherwise treats it as a file path.
+    """
+    config_path = Path(config_arg)
+    
+    # If it's not an absolute path and has no path separators, treat as short name
+    if not config_path.is_absolute() and "/" not in config_arg and "\\" not in config_arg:
+        # Resolve relative to python/configs/experiments/
+        python_root = Path(__file__).resolve().parent.parent
+        config_path = python_root / "configs" / "experiments" / f"{config_arg}.yaml"
+    
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+    
+    with config_path.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 
 
@@ -44,15 +61,19 @@ def dry_run(agent: Agent) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run Civ V LLM experiments")
-    parser.add_argument("--config", required=True, help="Path to experiment YAML config")
+    parser.add_argument(
+        "--config",
+        required=True,
+        help="Path to experiment YAML config or short name (e.g., 'gemini' for python/configs/experiments/gemini.yaml)",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Run without orchestrator, just one step")
     args = parser.parse_args()
 
-    repo_root = Path(__file__).resolve().parents[2]
-    cfg = load_config(Path(args.config))
+    python_root = Path(__file__).resolve().parent.parent
+    cfg = load_config(args.config)
 
     # Validate experiment config
-    exp_schema = load_schema(repo_root, "experiment.schema.json")
+    exp_schema = load_schema(python_root, "experiment.schema.json")
     validate(cfg, exp_schema)
 
     # Build components

@@ -12,7 +12,7 @@
       "type": "object",
       "additionalProperties": true,
       "properties": {
-        "kind": { "type": "string", "enum": ["dummy", "openai"] },
+        "kind": { "type": "string", "enum": ["dummy", "openai", "gemini"] },
         "seed": { "type": "integer" },
         "model": { "type": "string" },
         "api_key": { "type": "string" },
@@ -59,3 +59,4 @@
   },
   "required": ["name", "backend", "strategy"]
 }
+
