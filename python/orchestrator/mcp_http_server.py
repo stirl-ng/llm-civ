@@ -55,10 +55,6 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
             tools = self.mcp_server.get_tools()
             self._send_json({"tools": tools})
 
-        elif self.path == "/stats":
-            stats = self.mcp_server.get_action_stats()
-            self._send_json({"stats": stats})
-
         else:
             self._send_error(404, "Not found")
 
@@ -111,6 +107,20 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
             self._send_error(400, "Missing 'tool' field")
             return
 
+        # Log tool request (outgoing from LLM to orchestrator)
+        from .game_logger import get_game_logger
+        logger = get_game_logger()
+        logger.log_message({
+            "type": "tool_request",
+            "direction": "outgoing",
+            "game_id": self.mcp_server.current_game_id,
+            "session_id": self.mcp_server.current_session_id,
+            "player_id": self.mcp_server.current_player_id,
+            "turn": self.mcp_server.turn_number,
+            "tool": tool_name,
+            "arguments": arguments,
+        })
+
         result = self.mcp_server.execute_tool(tool_name, arguments)
         
         # Check if result indicates an error
@@ -162,7 +172,7 @@ class MCPHTTPServer:
         self.thread.start()
 
         logger.info(f"MCP HTTP Server started on http://{self.host}:{self.port}")
-        logger.info(f"Endpoints: GET /health, GET /tools, GET /stats, POST /tool")
+        logger.info(f"Endpoints: GET /health, GET /tools, POST /tool")
 
     def stop(self):
         """Stop the HTTP server."""

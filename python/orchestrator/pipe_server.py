@@ -7,13 +7,11 @@ import threading
 import time
 import uuid
 from ctypes import wintypes
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 from .game_logger import get_game_logger
 
-from .message_validator import MessageValidator
-
 if TYPE_CHECKING:
-    from .mcp_server import CivMCPServer
+    from .state_processor import StateProcessor
 
 
 LPSECURITY_ATTRIBUTES = ctypes.c_void_p
@@ -127,6 +125,11 @@ class PipeConnection:
         request_id = request.get("request_id") or str(uuid.uuid4())
         request["request_id"] = request_id
         
+        # Log outgoing message to DLL
+        log_msg = request.copy()
+        log_msg["direction"] = "outgoing"
+        get_game_logger().log_message(log_msg)
+        
         q = queue.Queue()
         with self._response_lock:
             self._pending_responses[request_id] = q
@@ -199,63 +202,6 @@ class PipeConnection:
         return bytes(self._buf[:bytes_read.value])
 
 
-class StateProcessor:
-    """Processes incoming messages from DLL - validates, logs, and routes to CivMCPServer."""
-
-    def __init__(self, mcp_server: Optional["CivMCPServer"] = None):
-        """Initialize state processor.
-
-        Args:
-            mcp_server: CivMCPServer instance for turn management (holds all state)
-        """
-        self.validator = MessageValidator()
-        self._last_state: Optional[dict[str, Any]] = None
-        self.mcp_server = mcp_server
-
-    def process_message(self, message: dict[str, Any]) -> None:
-        """Process an incoming message from DLL.
-
-        Routes responses to waiting requests, logs everything, validates,
-        and calls mcp_server on turn events.
-
-        Args:
-            message: Message dictionary from DLL
-        """
-        msg_type = message.get("type", "unknown")
-        
-        # Log messages from DLL to JSONL file (skip heartbeats to avoid spam)
-        if msg_type != "heartbeat":
-            log_msg = message.copy()
-            log_msg["direction"] = "incoming"
-            get_game_logger().log_message(log_msg)
-
-        # Route turn events to mcp_server
-        if msg_type == "turn_start" and self.mcp_server:
-            self.mcp_server.start_turn(message)
-        elif msg_type == "heartbeat" and self.mcp_server:
-            self.mcp_server.handle_heartbeat(message)
-
-        # Notifications and trace don't need further processing
-        if msg_type in ("game_notification", "notification", "trace"):
-            return
-
-        # Handle response messages - deliver to waiting requests
-        if self.mcp_server and self.mcp_server.acknowledge_response(message):
-            return
-
-        # Validate message
-        is_valid, error_msg = self.validator.validate_message(message)
-        if not is_valid:
-            return
-
-        # Check consistency with previous turn_start
-        if self._last_state:
-            is_consistent, warning = self.validator.check_turn_consistency(self._last_state, message)
-
-        self._last_state = message
-
-
-
 class NamedPipeServer:
     """Single-client named-pipe server for turn-based communication.
 
@@ -267,20 +213,18 @@ class NamedPipeServer:
 
     def __init__(
         self,
-        pipe_name: str,
-        mcp_server: Optional["CivMCPServer"] = None
+        pipe_name: str
     ):
         if not pipe_name.startswith("\\\\.\\pipe\\"):
             raise ValueError("pipe_name must start with \\\\.\\pipe\\")
         self.pipe_name = pipe_name
-        self.mcp_server = mcp_server
         self._running = False
         self._handle: Optional[int] = None
         self._current_handler_thread: Optional[threading.Thread] = None
         self._handler_lock = threading.Lock()
-
-        # State processing - pass mcp_server for turn management
-        self.state_processor = StateProcessor(mcp_server=mcp_server)
+        self.state_processor: Optional[StateProcessor] = None
+        self._pipe_conn: Optional[PipeConnection] = None
+        self._connection_ready = threading.Event()
         
     def start(self) -> None:
         if self._running:
@@ -330,6 +274,12 @@ class NamedPipeServer:
                 WinAPI.CloseHandle(h)
             except Exception:
                 pass
+        # Reset connection state when pipe closes
+        self._pipe_conn = None
+        self._connection_ready.clear()
+        # Update game state connection status
+        if self.state_processor and self.state_processor.game_state:
+            self.state_processor.game_state.set_connected(False)
 
     def _serve_loop(self) -> None:
         while self._running:
@@ -348,15 +298,59 @@ class NamedPipeServer:
             finally:
                 self._close()
 
+    def set_state_processor(self, state_processor: "StateProcessor") -> None:
+        """Set the state processor for processing incoming messages.
+        
+        Args:
+            state_processor: StateProcessor instance to use for message processing
+        """
+        self.state_processor = state_processor
+
+    def get_pipe_connection(self, timeout: Optional[float] = None) -> Optional[PipeConnection]:
+        """Wait for pipe connection to be established and return it.
+        
+        Args:
+            timeout: Maximum time to wait in seconds. None means wait indefinitely.
+                    0 means return immediately (don't wait).
+            
+        Returns:
+            PipeConnection instance, or None if timeout occurred.
+        """
+        if timeout == 0:
+            # Return immediately without waiting
+            return self._pipe_conn if self._connection_ready.is_set() else None
+        if self._connection_ready.wait(timeout=timeout):
+            return self._pipe_conn
+        return None
+
+    def send_request(self, request: dict[str, Any], timeout: float = 5.0) -> dict[str, Any]:
+        """Send a request to the DLL and wait for response.
+        
+        Args:
+            request: Request dictionary (must have 'type' field)
+            timeout: Seconds to wait for response
+            
+        Returns:
+            Response dictionary from DLL
+            
+        Raises:
+            ToolError: If no pipe connection is available
+        """
+        pipe_conn = self.get_pipe_connection(timeout=0)
+        if not pipe_conn:
+            from .mcp_server import ToolError
+            raise ToolError("No pipe connection available")
+        return pipe_conn.send_request(request, timeout=timeout)
+
     def _client_loop(self, h: int) -> None:
+        self._pipe_conn = PipeConnection(h)
+        # Update game state connection status
+        if self.state_processor and self.state_processor.game_state:
+            self.state_processor.game_state.set_connected(True)
+        self._connection_ready.set()
         buf = (ctypes.c_char * WinAPI.BUFSIZE)()
         bytes_read = wintypes.DWORD(0)
         bytes_avail = wintypes.DWORD(0)
-        pipe_conn = PipeConnection(h)
-
-        # Set pipe connection on mcp_server once at connection time
-        if self.mcp_server:
-            self.mcp_server.set_pipe_connection(pipe_conn)
 
         while self._running:
             # Non-blocking peek to check if data is available
@@ -404,8 +398,15 @@ class NamedPipeServer:
                     from .game_logger import get_game_logger
                     get_game_logger().log_message({"error": "Failed to decode message", "message": msg})
                     continue
-                # Process state (validation, persistence, notifications, and delivery to waiting sync requests)
-                self.state_processor.process_message(message)
+                
+                # First, try to route response messages to waiting requests
+                if self._pipe_conn and self._pipe_conn.acknowledge_response(message):
+                    # Response was delivered to a waiting request, skip further processing
+                    continue
+                
+                # Process state (validation, persistence, notifications)
+                if self.state_processor:
+                    self.state_processor.process_message(message)
 
             # Cleanup thread reference
             with self._handler_lock:

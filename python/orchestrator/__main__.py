@@ -15,6 +15,8 @@ from .logging_setup import setup_logging
 from .mcp_http_server import MCPHTTPServer
 from .mcp_server import CivMCPServer
 from .pipe_server import NamedPipeServer
+from .state_processor import StateProcessor
+from .game_state import GameState
 
 
 DEFAULT_PIPE = r"\\.\pipe\civv_llm"
@@ -24,29 +26,52 @@ def run_mcp_mode(
     pipe_path: str,
     mcp_host: str,
     mcp_port: int,
-    turn_timeout: float,
     dashboard_host: str | None = None,
     dashboard_port: int = 5000,
 ) -> None:
-    # Create the central game server (single source of truth for all state)
-    mcp_server = CivMCPServer(turn_timeout=turn_timeout)
+    # Create GameState instance (single source of truth for metadata)
+    game_state = GameState()
+    
+    # Create pipe server first (manages pipe connection)
+    pipe_server = NamedPipeServer(pipe_path)
+    
+    # Create the central game server with send_request callback and game_state
+    def send_request(request: dict, timeout: float) -> dict:
+        """Send a request to the DLL via the pipe server."""
+        return pipe_server.send_request(request, timeout)
+    
+    mcp_server = CivMCPServer(
+        send_request=send_request,
+        game_state=game_state
+    )
+
+    # Create state processor (processes DLL messages, routes to mcp_server, updates game_state)
+    state_processor = StateProcessor(mcp_server=mcp_server, game_state=game_state)
+    pipe_server.set_state_processor(state_processor)
+
+    # Start pipe server in background thread
+    pipe_thread = Thread(target=pipe_server.start, daemon=True)
+    pipe_thread.start()
+
+    print(f"[orchestrator] Waiting for DLL to connect...", file=sys.stderr)
+    
+    # Wait for pipe connection to be established
+    pipe_connection = pipe_server.get_pipe_connection(timeout=None)  # Wait indefinitely
+    if pipe_connection:
+        print(f"[orchestrator] DLL connected", file=sys.stderr)
 
     # Create HTTP server (just exposes mcp_server via HTTP)
     http_server = MCPHTTPServer(mcp_host, mcp_port, mcp_server=mcp_server)
     http_server.start()
 
-    # Create pipe server (handles DLL communication, calls mcp_server on events)
-    pipe_server = NamedPipeServer(pipe_path, mcp_server=mcp_server)
-
     print(f"[orchestrator] MCP server: http://{mcp_host}:{mcp_port}/tool", file=sys.stderr)
-    print(f"[orchestrator] Turn timeout: {turn_timeout}s", file=sys.stderr)
     print(f"[orchestrator] Pipe: {pipe_path}", file=sys.stderr)
 
     # Start dashboard if requested
     if dashboard_host is not None:
         from .dashboard import create_dashboard_app
 
-        app = create_dashboard_app(mcp_server)
+        app = create_dashboard_app(mcp_server=mcp_server, game_state=game_state)
 
         def run_dashboard():
             import logging
@@ -57,11 +82,6 @@ def run_mcp_mode(
         dashboard_thread = Thread(target=run_dashboard, daemon=True)
         dashboard_thread.start()
         print(f"[orchestrator] Dashboard: http://{dashboard_host}:{dashboard_port}", file=sys.stderr)
-
-    print(f"[orchestrator] Waiting for DLL to connect...", file=sys.stderr)
-
-    pipe_thread = Thread(target=pipe_server.start, daemon=True)
-    pipe_thread.start()
 
     # Main thread waits for Ctrl+C
     try:
@@ -90,8 +110,6 @@ def main() -> None:
                         help="MCP server host (default: localhost)")
     parser.add_argument("--mcp-port", type=int, default=8765,
                         help="MCP server port (default: 8765)")
-    parser.add_argument("--turn-timeout", type=float, default=300.0,
-                        help="Max seconds to wait for LLM per turn (default: 300)")
 
     # Dashboard options
     parser.add_argument("--disable-dashboard", action="store_true",
@@ -109,7 +127,6 @@ def main() -> None:
         pipe_path=pipe,
         mcp_host=args.mcp_host,
         mcp_port=args.mcp_port,
-        turn_timeout=args.turn_timeout,
         dashboard_host=args.dashboard_host if not args.disable_dashboard else None,
         dashboard_port=args.dashboard_port,
     )

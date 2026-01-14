@@ -14,7 +14,11 @@ from typing import Optional
 
 from flask import Flask, jsonify, render_template_string, request
 
-from .mcp_server import CivMCPServer
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .game_state import GameState
+    from .mcp_server import CivMCPServer
 
 
 # HTML template for the dashboard
@@ -371,7 +375,8 @@ DASHBOARD_HTML = """
                         <option value="turn_complete">Turn Complete</option>
                         <option value="notification">Notification</option>
                         <option value="action_result">Action Result</option>
-                        <option value="tool_call">Tool Call</option>
+                        <option value="tool_request">Tool Request</option>
+                        <option value="tool_response">Tool Response</option>
                         <option value="note">Note</option>
                     </select>
                     <select id="directionFilter">
@@ -1426,14 +1431,19 @@ DASHBOARD_HTML = """
 """
 
 
-def create_dashboard_app(mcp_server: Optional[CivMCPServer] = None) -> Flask:
+def create_dashboard_app(
+    mcp_server: Optional[CivMCPServer] = None,
+    game_state: Optional["GameState"] = None
+) -> Flask:
     """Create and configure the Flask dashboard application.
 
     Args:
-        mcp_server: CivMCPServer instance (single source of truth for all state)
+        mcp_server: CivMCPServer instance for tool execution
+        game_state: GameState instance (single source of truth for metadata)
     """
     app = Flask(__name__)
     app.config["mcp_server"] = mcp_server
+    app.config["game_state"] = game_state
 
     @app.route("/")
     def index():
@@ -1460,20 +1470,25 @@ def create_dashboard_app(mcp_server: Optional[CivMCPServer] = None) -> Flask:
     @app.route("/api/session")
     def api_session():
         """Get current game and session info."""
-        mcp = app.config.get("mcp_server")
-
-        if mcp:
+        game_state = app.config.get("game_state")
+        
+        if game_state:
+            metadata = game_state.get_metadata()
             return jsonify({
-                "game_id": mcp.current_game_id,
-                "session_id": mcp.current_session_id,
-                "turn_number": mcp.turn_number,
-                "connected": True
+                "game_id": metadata["game_id"],
+                "session_id": metadata["session_id"],
+                "turn_number": metadata["turn_number"],
+                "player_id": metadata["player_id"],
+                "player_name": metadata["player_name"],
+                "connected": metadata["connected"]
             })
 
         return jsonify({
             "game_id": None,
             "session_id": None,
             "turn_number": None,
+            "player_id": None,
+            "player_name": None,
             "connected": False
         })
 

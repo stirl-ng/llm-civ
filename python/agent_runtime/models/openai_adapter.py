@@ -5,6 +5,19 @@ from typing import Any, Dict, List, Optional
 
 from .base import ModelAdapter
 
+# Try to import LLM logger (may not be available if orchestrator not running)
+try:
+    import sys
+    from pathlib import Path
+    # Add orchestrator to path if needed
+    orchestrator_path = Path(__file__).parent.parent.parent / "orchestrator"
+    if str(orchestrator_path) not in sys.path:
+        sys.path.insert(0, str(orchestrator_path))
+    from llm_logger import get_llm_logger
+    _llm_logger_available = True
+except ImportError:
+    _llm_logger_available = False
+
 
 class OpenAIChat(ModelAdapter):
     """
@@ -44,11 +57,39 @@ class OpenAIChat(ModelAdapter):
 
     def generate(self, messages: List[Dict[str, str]], **kwargs: Any) -> str:
         temperature = kwargs.get("temperature", 0.2)
+        
+        # Log LLM request
+        request_uuid = None
+        if _llm_logger_available:
+            try:
+                logger = get_llm_logger()
+                request_uuid = logger.log_request(
+                    model=self._model,
+                    messages=messages,
+                    temperature=temperature,
+                    **{k: v for k, v in kwargs.items() if k != "temperature"}
+                )
+            except Exception:
+                pass  # Don't fail if logging fails
+        
         res = self._client.chat.completions.create(
             model=self._model,
             messages=messages,
             temperature=temperature,
         )
         msg = res.choices[0].message
-        return (msg.content or "").strip()
+        response_text = (msg.content or "").strip()
+        
+        # Log LLM response
+        if _llm_logger_available and request_uuid:
+            try:
+                logger = get_llm_logger()
+                logger.log_response(
+                    request_uuid=request_uuid,
+                    response=response_text,
+                )
+            except Exception:
+                pass  # Don't fail if logging fails
+        
+        return response_text
 
