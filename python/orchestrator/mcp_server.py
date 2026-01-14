@@ -16,7 +16,8 @@ from typing import TYPE_CHECKING, Any, Optional
 
 
 if TYPE_CHECKING:
-    from .pipe_server import PipeConnection
+    from typing import Callable
+    from .game_state import GameState
 
 
 
@@ -29,9 +30,9 @@ class CivMCPServer:
     """Tool executor that bridges LLM requests to Civ V game.
 
     Sequential turn flow:
-    1. Orchestrator calls start_turn(state, pipe_connection)
+    1. Orchestrator calls start_turn(state) when DLL sends turn_start
     2. LLM queries state and sends actions via tools (all queries go to DLL)
-    3. Each action is sent immediately to DLL, response returned to LLM
+    3. Each action is sent immediately to DLL via send_request callback, response returned to LLM
     4. LLM calls end_turn when done
     5. Orchestrator resumes, signals DLL to advance turn
 
@@ -47,29 +48,20 @@ class CivMCPServer:
     4. Add client/session tracking to route responses correctly
     """
 
-    def __init__(self, turn_timeout: float = 300.0):
+    def __init__(
+        self, 
+        send_request: Optional[Callable[[dict[str, Any], float], dict[str, Any]]] = None,
+        game_state: Optional["GameState"] = None
+    ):
         """Initialize the MCP server.
 
         Args:
-            turn_timeout: Max seconds to wait for LLM to end turn (default 5 min)
+            send_request: Callback to send requests to DLL: (request, timeout) -> response
+            game_state: GameState instance to read metadata from (single source of truth)
         """
-        self.turn_timeout = turn_timeout
-
-        # Turn management
-        self._pipe_conn: Optional["PipeConnection"] = None
-        self._current_turn_number: Optional[int] = None
-        self._first_turn_of_game: Optional[int] = None
+        self._send_request = send_request
+        self.game_state = game_state
         self._lock = threading.Lock()
-
-        # Session tracking (game_id persists across saves, session_id per connection)
-        self._current_game_id: Optional[int] = None
-        self._current_session_id: Optional[int] = None
-        self._current_player_id: Optional[int] = None
-
-        # Action statistics
-        self._action_count = 0
-        self._action_errors = 0
-        self._last_action_time: Optional[float] = None
 
         self.uptime = time.monotonic()
 
@@ -79,14 +71,11 @@ class CivMCPServer:
 
     def get_about(self) -> dict[str, Any]:
         """Get information about the MCP server."""
-        return {
-            "turn_timeout": self.turn_timeout,
-            "current_turn_number": self._current_turn_number,
-            "action_count": self._action_count,
-            "action_errors": self._action_errors,
-            "last_action_time": self._last_action_time,
-            "uptime": self.uptime,
-        }
+        with self._lock:
+            return {
+                "current_turn_number": self.turn_number,
+                "uptime": self.uptime,
+            }
 
     def get_tools(self) -> list[dict[str, Any]]:
         """Get the tools available to the MCP server.
@@ -115,84 +104,33 @@ class CivMCPServer:
 
         return tools
 
-    def start_turn(self, state: dict[str, Any]) -> None:
-        """Update turn state with the given game state.
-
-        Args:
-            state: Game state from DLL (contains turn, player_id, game_id, session_id)
-        """
-        new_turn_num = state.get("turn")
-        new_game_id = state.get("game_id")
-        new_session_id = state.get("session_id")
-        new_player_id = state.get("player_id")
-
-        with self._lock:
-            self._current_turn_number = new_turn_num
-            self._current_game_id = new_game_id
-            self._current_session_id = new_session_id
-            self._current_player_id = new_player_id
-
-            # Reset action statistics for new turn
-            self._action_count = 0
-            self._action_errors = 0
-            self._last_action_time = None
-
-    def handle_heartbeat(self, state: dict[str, Any]) -> None:
-        """Handle heartbeat from DLL - updates state without resetting counters.
-
-        This is called periodically by the DLL (every ~5 seconds) to let the orchestrator
-        know the game is still connected. Useful for detecting the game after orchestrator
-        restart.
-
-        Args:
-            state: Heartbeat state from DLL (contains turn, player_id, game_id, session_id)
-        """
-        with self._lock:
-            self._current_turn_number = state.get("turn")
-            self._current_game_id = state.get("game_id")
-            self._current_session_id = state.get("session_id")
-            self._current_player_id = state.get("player_id")
-
     @property
     def turn_number(self) -> Optional[int]:
         """Get the current turn number."""
-        with self._lock:
-            return self._current_turn_number
-    
-    def get_action_stats(self) -> dict[str, Any]:
-        """Get statistics about actions sent during the current turn.
-
-        Returns:
-            Dictionary with action_count, action_errors, and last_action_time
-        """
-        with self._lock:
-            return {
-                "game_id": self._current_game_id,
-                "session_id": self._current_session_id,
-                "turn": self._current_turn_number,
-                "player_id": self._current_player_id,
-                "action_count": self._action_count,
-                "action_errors": self._action_errors,
-                "last_action_time": self._last_action_time,
-            }
+        if self.game_state:
+            return self.game_state.turn_number
+        return None
 
     @property
     def current_game_id(self) -> Optional[int]:
         """Get the current game ID (persists across saves)."""
-        with self._lock:
-            return self._current_game_id
+        if self.game_state:
+            return self.game_state.game_id
+        return None
 
     @property
     def current_session_id(self) -> Optional[int]:
         """Get the current session ID (changes per pipe connection)."""
-        with self._lock:
-            return self._current_session_id
+        if self.game_state:
+            return self.game_state.session_id
+        return None
 
     @property
     def current_player_id(self) -> Optional[int]:
         """Get the current player ID."""
-        with self._lock:
-            return self._current_player_id
+        if self.game_state:
+            return self.game_state.player_id
+        return None
 
     # -------------------------------------------------------------------------
     # Helper methods for tool implementations
@@ -224,71 +162,71 @@ class CivMCPServer:
             )
         return value
 
-    def set_pipe_connection(self, pipe_conn: "PipeConnection") -> None:
-        """Set the current pipe connection.
-
-        Called by NamedPipeServer when a new client connects.
-
+    def _condition_request(self, request: dict[str, Any]) -> None:
+        """Add context fields to a request dict if they're not already present.
+        
+        Modifies the request dict in-place.
+        
         Args:
-            pipe_conn: The new PipeConnection instance
+            request: Request dictionary to condition
         """
         with self._lock:
-            self._pipe_conn = pipe_conn
-
-    def _get_pipe(self) -> "PipeConnection":
-        """Get the pipe connection or raise if not available.
-
-        Returns:
-            The current PipeConnection
-
-        Raises:
-            ToolError: If no pipe connection is available
-        """
-        with self._lock:
-            pipe_conn = self._pipe_conn
-        if not pipe_conn:
-            raise ToolError("No pipe connection available")
-        return pipe_conn
-
-    def acknowledge_response(self, response: dict[str, Any]) -> bool:
-        """Deliver a response to a waiting request.
-
-        Forwards to the current pipe connection's acknowledge_response method.
-
-        Args:
-            response: Response dictionary from DLL
-
-        Returns:
-            True if response was delivered to a waiting request, False otherwise
-        """
-        with self._lock:
-            pipe_conn = self._pipe_conn
-        if not pipe_conn:
-            return False
-        return pipe_conn.acknowledge_response(response)
+            if "game_id" not in request:
+                request["game_id"] = self.current_game_id
+            if "session_id" not in request:
+                request["session_id"] = self.current_session_id
+            if "player_id" not in request:
+                request["player_id"] = self.current_player_id
+            if "turn" not in request:
+                request["turn"] = self.turn_number
 
     def _send_pipe_request(
-        self, request_type: str, timeout: float = 5.0, **extra_fields: Any
+        self, 
+        request_type: str | None = None,
+        request: dict[str, Any] | None = None,
+        timeout: float = 5.0, 
+        **extra_fields: Any
     ) -> dict[str, Any]:
         """Send a request to the DLL and return the response.
 
+        Can be called in two ways:
+        1. With request_type string: _send_pipe_request("get_state", timeout=5.0, city_id=123)
+        2. With pre-built request dict: _send_pipe_request(request={"type": "select_pantheon", "belief_id": 5, timeout=5.0})
+
         Args:
-            request_type: The message type (e.g., "get_state", "get_units")
+            request_type: The message type (e.g., "get_state", "get_units"). Mutually exclusive with request.
+            request: Pre-built request dictionary. Mutually exclusive with request_type.
             timeout: Request timeout in seconds
-            **extra_fields: Additional fields to include in the request
+            **extra_fields: Additional fields to include in the request (only used with request_type)
 
         Returns:
             Response dict from DLL
 
         Raises:
-            ToolError: If no pipe connection or request fails
+            ToolError: If no send_request callback configured, both/neither args provided, or request fails
         """
-        pipe = self._get_pipe()
-        request = {"type": request_type, **extra_fields}
+        if not self._send_request:
+            raise ToolError("No send_request callback configured")
+        
+        if request_type is not None and request is not None:
+            raise ToolError("Cannot provide both request_type and request")
+        if request_type is None and request is None:
+            raise ToolError("Must provide either request_type or request")
+        
+        # Build request dict
+        if request_type is not None:
+            request = {"type": request_type, **extra_fields}
+        else:
+            # Use provided request, but allow extra_fields to override/extend
+            request = {**request, **extra_fields}
+        
+        self._condition_request(request)
+        
         try:
-            return pipe.send_request(request, timeout=timeout)
+            return self._send_request(request, timeout)
         except Exception as e:
             raise ToolError(f"Request failed: {e}") from e
+
 
     def _not_implemented(self, tool_name: str) -> dict[str, Any]:
         """Return a standard 'not implemented' response for placeholder tools."""
@@ -300,9 +238,14 @@ class CivMCPServer:
     def execute_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute a tool and return results.
 
-        Single log entry with both call and result after execution.
+        Tool request is logged separately in mcp_http_server.py.
+        Tool response is logged here after execution.
         ToolErrors are expected (validation failures) and returned cleanly.
         """
+        # Ensure send_request callback is configured (required for most tools)
+        if not self._send_request:
+            return {"error": "No send_request callback configured", "status": "error"}
+        
         try:
             if name in self._TOOLS:
                 handler_name, _ = self._TOOLS[name]
@@ -319,17 +262,18 @@ class CivMCPServer:
         except Exception as e:
             result = {"error": str(e), "status": "error"}
 
-        # Single log entry with both call and result
-        self._message_logger.log_message({ # TODO is this the actual return result?
-            "type": "tool_call",
-            "game_id": self._current_game_id,
-            "session_id": self._current_session_id,
-            "player_id": self._current_player_id,
-            "turn": self.turn_number,
-            "tool": name,
-            "arguments": arguments,
-            "result": result,
-        })
+        # Log tool response (incoming to LLM from orchestrator)
+        with self._lock:
+            self._message_logger.log_message({
+                "type": "tool_response",
+                "direction": "incoming",
+                "game_id": self.current_game_id,
+                "session_id": self.current_session_id,
+                "player_id": self.current_player_id,
+                "turn": self.turn_number,
+                "tool": name,
+                "result": result,
+            })
 
         return result
 
@@ -357,7 +301,7 @@ class CivMCPServer:
         "ping": ("_ping", {}),
         # Log tools (local)
         "get_log": ("_get_log", {
-            "message_type": "optional string (e.g., 'turn_start', 'notification', 'note')",
+            "message_type": "optional string (e.g., 'turn_start', 'notification')",
             "direction": "optional string: 'incoming'|'outgoing'",
             "turn_number": "optional int",
             "player_id": "optional int",
@@ -366,8 +310,6 @@ class CivMCPServer:
             "current_game_only": "optional bool (default True)",
             "limit": "optional int (default 100, max 1000)",
         }),
-        "add_note": ("_add_note", {"content": "required string"}),
-        "delete_note": ("_delete_note", {"note_id": "required string (uuid of note to delete)"}),
         # Action tools
         "send_action": ("_send_action", {"action": "required dict with 'kind' field"}),
         "end_turn": ("_end_turn", {"turn": "required int"}),
@@ -426,35 +368,18 @@ class CivMCPServer:
 
         # Validate action has required 'kind' field
         if not action:
-            with self._lock:
-                self._action_errors += 1
             raise ToolError("Action cannot be empty")
         if "kind" not in action:
-            with self._lock:
-                self._action_errors += 1
             raise ToolError("Action missing required 'kind' field")
 
-        pipe = self._get_pipe()
         action_kind = action["kind"]
 
         # Convert action to message: 'kind' -> 'type'
         message = {k: v for k, v in action.items() if k != "kind"}
         message["type"] = action_kind
 
-        # Send and track stats
-        try:
-            result = pipe.send_request(message, timeout=10.0)
-            with self._lock:
-                if "error" in result:
-                    self._action_errors += 1
-                else:
-                    self._action_count += 1
-                    self._last_action_time = time.time()
-            return result
-        except Exception as e:
-            with self._lock:
-                self._action_errors += 1
-            raise ToolError(f"Failed to send action: {e}") from e
+        # Send to DLL
+        return self._send_pipe_request(request=message)
 
     def _end_turn(self, args: dict[str, Any]) -> dict[str, Any]:
         """Signal that the LLM is done with its turn and wait for DLL confirmation.
@@ -464,11 +389,7 @@ class CivMCPServer:
         """
         turn = self._require_param(args, "turn", int)
         with self._lock:
-            pipe_conn = self._pipe_conn
-            current_turn = self._current_turn_number
-
-        if not pipe_conn:
-            return {"error": "No pipe connection available", "status": "error"}
+            current_turn = self.turn_number
 
         # Validate that we have a current turn number set
         if current_turn is None:
@@ -492,12 +413,9 @@ class CivMCPServer:
 
         # Send end_turn to DLL and wait for end_turn_result
         try:
-            msg = {"type": "end_turn", "turn": turn}
-            result = pipe_conn.send_request(msg, timeout=15.0)
-            return result
-
-        except Exception as e:
-            return {"status": "error", "error": f"Failed to end turn: {e}"}
+            return self._send_pipe_request(request={"type": "end_turn", "turn": turn})
+        except ToolError as e:
+            return {"status": "error", "error": str(e)}
 
     # -------------------------------------------------------------------------
     # Popup Choice Tools
@@ -512,15 +430,11 @@ class CivMCPServer:
         belief_id = self._require_param(args, "belief_id", int)
         player_id = args.get("player_id")
 
-        pipe = self._get_pipe()
         message = {"type": "select_pantheon", "belief_id": belief_id}
         if player_id is not None:
             message["player_id"] = player_id
 
-        try:
-            return pipe.send_request(message, timeout=10.0)
-        except Exception as e:
-            return {"status": "error", "error": f"Failed to select pantheon: {e}"}
+        return self._send_pipe_request(request=message)
 
     def _found_religion(self, args: dict[str, Any]) -> dict[str, Any]:
         """Found a new religion for the player.
@@ -532,7 +446,6 @@ class CivMCPServer:
         founder_belief_id = self._require_param(args, "founder_belief_id", int)
         follower_belief_id = self._require_param(args, "follower_belief_id", int)
 
-        pipe = self._get_pipe()
         message: dict[str, Any] = {
             "type": "found_religion",
             "religion_id": religion_id,
@@ -543,10 +456,7 @@ class CivMCPServer:
             if args.get(key) is not None:
                 message[key] = args[key]
 
-        try:
-            return pipe.send_request(message, timeout=10.0)
-        except Exception as e:
-            return {"status": "error", "error": f"Failed to found religion: {e}"}
+        return self._send_pipe_request(request=message)
 
     def _enhance_religion(self, args: dict[str, Any]) -> dict[str, Any]:
         """Enhance an existing religion with additional beliefs.
@@ -557,7 +467,6 @@ class CivMCPServer:
         follower2_belief_id = self._require_param(args, "follower2_belief_id", int)
         enhancer_belief_id = self._require_param(args, "enhancer_belief_id", int)
 
-        pipe = self._get_pipe()
         message: dict[str, Any] = {
             "type": "enhance_religion",
             "follower2_belief_id": follower2_belief_id,
@@ -566,10 +475,7 @@ class CivMCPServer:
         if args.get("player_id") is not None:
             message["player_id"] = args["player_id"]
 
-        try:
-            return pipe.send_request(message, timeout=10.0)
-        except Exception as e:
-            return {"status": "error", "error": f"Failed to enhance religion: {e}"}
+        return self._send_pipe_request(request=message)
 
     def _city_capture_decision(self, args: dict[str, Any]) -> dict[str, Any]:
         """Make a decision about a captured city.
@@ -593,7 +499,6 @@ class CivMCPServer:
         if action == "liberate" and args.get("liberate_to") is None:
             raise ToolError("liberate_to is required when action is 'liberate'")
 
-        pipe = self._get_pipe()
         message: dict[str, Any] = {
             "type": "city_capture_decision",
             "city_id": city_id,
@@ -603,10 +508,7 @@ class CivMCPServer:
             if args.get(key) is not None:
                 message[key] = args[key]
 
-        try:
-            return pipe.send_request(message, timeout=10.0)
-        except Exception as e:
-            return {"status": "error", "error": f"Failed to make city decision: {e}"}
+        return self._send_pipe_request(request=message)
 
     def _set_city_production(self, args: dict[str, Any]) -> dict[str, Any]:
         """Set production for a city.
@@ -627,7 +529,6 @@ class CivMCPServer:
         if order_type not in [0, 1, 2, 3]:
             raise ToolError(f"Invalid order_type {order_type}. Must be 0-3.")
 
-        pipe = self._get_pipe()
         message: dict[str, Any] = {
             "type": "set_city_production",
             "city_id": city_id,
@@ -637,10 +538,7 @@ class CivMCPServer:
         if args.get("player_id") is not None:
             message["player_id"] = args["player_id"]
 
-        try:
-            return pipe.send_request(message, timeout=10.0)
-        except Exception as e:
-            return {"status": "error", "error": f"Failed to set city production: {e}"}
+        return self._send_pipe_request(request=message)
 
     def _choose_tech(self, args: dict[str, Any]) -> dict[str, Any]:
         """Select a technology to research.
@@ -650,15 +548,11 @@ class CivMCPServer:
         """
         tech_id = self._require_param(args, "tech_id", int)
 
-        pipe = self._get_pipe()
         message: dict[str, Any] = {"type": "choose_tech", "tech_id": tech_id}
         if args.get("player_id") is not None:
             message["player_id"] = args["player_id"]
 
-        try:
-            return pipe.send_request(message, timeout=10.0)
-        except Exception as e:
-            return {"status": "error", "error": f"Failed to choose tech: {e}"}
+        return self._send_pipe_request(request=message)
 
     # -------------------------------------------------------------------------
     # DLL Query Tools
@@ -747,24 +641,13 @@ class CivMCPServer:
         if current_game_only and game_id is None:
             game_id = self.current_game_id
 
-        # Special handling for 'note' type - notes are tool_call entries with tool="add_note"
-        if message_type == "note":
-            all_messages = self._message_logger.get_messages(
-                message_type="tool_call",
-                turn_number=turn_number,
-                player_id=player_id,
-                game_id=game_id,
-                session_id=session_id,
-            )
-            messages = [m for m in all_messages if m.get("tool") == "add_note"]
-        else:
-            messages = self._message_logger.get_messages(
-                message_type=message_type,
-                turn_number=turn_number,
-                player_id=player_id,
-                game_id=game_id,
-                session_id=session_id,
-            )
+        messages = self._message_logger.get_messages(
+            message_type=message_type,
+            turn_number=turn_number,
+            player_id=player_id,
+            game_id=game_id,
+            session_id=session_id,
+        )
 
         if direction:
             messages = [m for m in messages if m.get("direction") == direction]
@@ -784,29 +667,5 @@ class CivMCPServer:
 
     def _ping(self, args: dict[str, Any]) -> dict[str, Any]:
         """Ping the DLL to check connectivity and get server status."""
-        result = self._send_pipe_request("ping")
+        return self._send_pipe_request("ping")
 
-        # Add orchestrator stats to the result
-        with self._lock:
-            result["orchestrator_stats"] = {
-                "turn_number": self._current_turn_number,
-                "action_count": self._action_count,
-                "action_errors": self._action_errors,
-            }
-
-        return result
-
-    def _add_note(self, args: dict[str, Any]) -> dict[str, Any]:
-        """Add a note. Content is captured in the tool_call log entry."""
-        content = self._require_param(args, "content", str)
-        return {"status": "success", "content_length": len(content)}
-
-    def _delete_note(self, args: dict[str, Any]) -> dict[str, Any]:
-        """Mark a note as deleted by setting a 'deleted' timestamp on it."""
-        note_id = self._require_param(args, "note_id", str)
-        found = self._message_logger.mark_deleted(note_id)
-        if found:
-            return {"status": "success", "note_id": note_id}
-        else:
-            return {"status": "error", "error": f"Note not found: {note_id}"}
-    

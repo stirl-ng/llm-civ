@@ -301,7 +301,6 @@ Commands are routed by `type` field:
 | `_end_turn()` | `end_turn` | End current turn |
 | `_get_units()` | `get_units` | List all player units |
 | `_get_log()` | `get_log` | Query message log history |
-| `_add_note()` | `add_note` | Add note to game log |
 
 ### pipe_server.py
 **Purpose**: Named pipe client connection to DLL

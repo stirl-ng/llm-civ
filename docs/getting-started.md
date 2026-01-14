@@ -96,37 +96,6 @@ curl -X POST http://localhost:8765/tool \
   }'
 ```
 
-**Add a note (stored in JSONL log):**
-```bash
-curl -X POST http://localhost:8765/tool \
-  -H "Content-Type: application/json" \
-  -d '{
-    "tool": "add_note",
-    "arguments": {"content": "My notes and thoughts"}
-  }'
-```
-Returns: `{"status": "success", "note_id": "...", ...}`
-
-**Get notes from log:**
-```bash
-curl -X POST http://localhost:8765/tool \
-  -H "Content-Type: application/json" \
-  -d '{
-    "tool": "get_log",
-    "arguments": {"message_type": "note"}
-  }'
-```
-
-**Delete a note:**
-```bash
-curl -X POST http://localhost:8765/tool \
-  -H "Content-Type: application/json" \
-  -d '{
-    "tool": "delete_note",
-    "arguments": {"note_id": "uuid-from-add_note-response"}
-  }'
-```
-
 ## Available Tools
 
 See docs/protocol.md
