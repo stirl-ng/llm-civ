@@ -49,10 +49,8 @@ class StateProcessor:
             get_game_logger().log_message(log_msg)
 
         # Update game state from DLL messages
-        if msg_type == "turn_start" and self.game_state:
-            self.game_state.update_from_turn_start(message)
-        elif msg_type == "heartbeat" and self.game_state:
-            self.game_state.update_from_heartbeat(message)
+        if msg_type in ("turn_start", "heartbeat") and self.game_state:
+            self.game_state.update_from_message(message)
         
         # Notifications and trace don't need further processing
         if msg_type in ("game_notification", "notification", "trace"):

@@ -2,13 +2,14 @@
 Flask Dashboard for Civilization V LLM Orchestrator
 
 Provides a web interface for:
-- Viewing logs with filtering
-- Triggering MCP commands manually
-- Monitoring game state
+- Monitoring system status (DLL pipe, MCP server, game connection)
+- Viewing detailed game state
+- Tracking LLM activity (tool calls and messages)
+- Viewing summary log
 """
 
 import json
-import re
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -49,60 +50,51 @@ DASHBOARD_HTML = """
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
         }
         .header h1 {
             color: #e94560;
             font-size: 1.5rem;
         }
-        .status {
+        .status-bar {
             display: flex;
-            gap: 1rem;
+            gap: 1.5rem;
             align-items: center;
+            flex-wrap: wrap;
+        }
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
         }
         .status-indicator {
-            width: 12px;
-            height: 12px;
+            width: 10px;
+            height: 10px;
             border-radius: 50%;
             background: #4ade80;
         }
         .status-indicator.disconnected {
             background: #ef4444;
         }
+        .status-indicator.offline {
+            background: #6b7280;
+        }
+        .status-label {
+            color: #aaa;
+            margin-right: 0.25rem;
+        }
+        .status-value {
+            color: #eee;
+            font-weight: 500;
+        }
         .container {
             display: grid;
-            grid-template-columns: 1fr 350px;
+            grid-template-columns: 1fr 400px;
             gap: 1rem;
             padding: 1rem;
-            height: calc(100vh - 70px);
-        }
-        .tabs {
-            display: flex;
-            background: #0f3460;
-            border-bottom: 2px solid #1a4b8c;
-        }
-        .tab {
-            padding: 0.75rem 1.5rem;
-            cursor: pointer;
-            background: transparent;
-            border: none;
-            color: #aaa;
-            font-weight: 500;
-            transition: all 0.2s;
-        }
-        .tab:hover {
-            background: #1a4b8c;
-            color: #eee;
-        }
-        .tab.active {
-            background: #16213e;
-            color: #e94560;
-            border-bottom: 2px solid #e94560;
-        }
-        .tab-content {
-            display: none;
-        }
-        .tab-content.active {
-            display: block;
+            min-height: calc(100vh - 120px);
         }
         .panel {
             background: #16213e;
@@ -118,1313 +110,611 @@ DASHBOARD_HTML = """
             display: flex;
             justify-content: space-between;
             align-items: center;
+            cursor: pointer;
+        }
+        .panel-header:hover {
+            background: #1a4b8c;
         }
         .panel-body {
             flex: 1;
             overflow-y: auto;
             padding: 1rem;
         }
-        /* Log viewer styles */
-        .log-filters {
+        .section {
+            margin-bottom: 1.5rem;
+        }
+        .section-header {
             display: flex;
-            gap: 0.5rem;
-            margin-bottom: 1rem;
-            flex-wrap: wrap;
-        }
-        .log-filters select, .log-filters input {
-            background: #1a1a2e;
-            border: 1px solid #0f3460;
-            color: #eee;
-            padding: 0.5rem;
-            border-radius: 4px;
-        }
-        .log-filters input {
-            flex: 1;
-            min-width: 200px;
-        }
-        .log-filters button {
-            background: #e94560;
-            border: none;
-            color: white;
-            padding: 0.5rem 1rem;
-            border-radius: 4px;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #0f3460;
+            margin-bottom: 0.75rem;
             cursor: pointer;
         }
-        .log-filters button:hover {
-            background: #d63050;
+        .section-header:hover {
+            color: #e94560;
         }
-        .log-entry {
-            font-family: 'Consolas', 'Monaco', monospace;
-            font-size: 0.85rem;
-            padding: 0.4rem 0.6rem;
+        .section-title {
+            color: #e94560;
+            font-size: 0.95rem;
+            font-weight: 600;
+        }
+        .section-toggle {
+            color: #888;
+            font-size: 0.8rem;
+        }
+        .section-content {
+            display: block;
+        }
+        .section-content.collapsed {
+            display: none;
+        }
+        .card {
+            background: #1a1a2e;
             border-radius: 4px;
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+        }
+        .card-title {
+            color: #4ade80;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+        .card-detail {
+            color: #aaa;
+            font-size: 0.85rem;
+            margin-top: 0.25rem;
+        }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.4rem 0;
+            border-bottom: 1px solid #0f3460;
+        }
+        .stat-row:last-child {
+            border-bottom: none;
+        }
+        .stat-label {
+            color: #888;
+        }
+        .stat-value {
+            color: #eee;
+            font-weight: 500;
+        }
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        .table th {
+            background: #0f3460;
+            padding: 0.5rem;
+            text-align: left;
+            color: #e94560;
+            font-weight: 600;
+        }
+        .table td {
+            padding: 0.5rem;
+            border-bottom: 1px solid #0f3460;
+        }
+        .table tr:hover {
+            background: #1a1a2e;
+        }
+        .tool-call {
+            padding: 0.5rem;
+            margin-bottom: 0.5rem;
+            background: #1a1a2e;
+            border-radius: 4px;
+            border-left: 3px solid #3b82f6;
+            font-size: 0.85rem;
+        }
+        .tool-call.error {
+            border-left-color: #ef4444;
+        }
+        .tool-call.success {
+            border-left-color: #4ade80;
+        }
+        .tool-call-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.25rem;
+        }
+        .tool-name {
+            color: #4ade80;
+            font-weight: 600;
+        }
+        .tool-timestamp {
+            color: #888;
+            font-size: 0.75rem;
+        }
+        .tool-args {
+            color: #aaa;
+            font-size: 0.8rem;
+            margin-top: 0.25rem;
+        }
+        .message-log {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .message-entry {
+            padding: 0.4rem 0.6rem;
             margin-bottom: 0.25rem;
             background: #1a1a2e;
-            word-break: break-word;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-family: 'Consolas', 'Monaco', monospace;
         }
-        .log-entry .timestamp {
+        .message-entry .timestamp {
             color: #888;
             margin-right: 0.5rem;
         }
-        .log-entry .level {
-            font-weight: 600;
-            margin-right: 0.5rem;
+        .message-entry .direction {
+            display: inline-block;
             padding: 0.1rem 0.4rem;
             border-radius: 3px;
-            font-size: 0.75rem;
+            font-size: 0.7rem;
+            margin-right: 0.5rem;
         }
-        .log-entry .level.INFO { background: #3b82f6; }
-        .log-entry .level.DEBUG { background: #6b7280; }
-        .log-entry .level.WARNING { background: #f59e0b; color: #000; }
-        .log-entry .level.ERROR { background: #ef4444; }
-        .log-entry .level.CRITICAL { background: #7c2d12; }
-        /* Command panel styles */
-        .command-section {
-            margin-bottom: 1.5rem;
+        .message-entry .direction.incoming {
+            background: #22c55e;
+            color: #000;
         }
-        .command-section h3 {
-            color: #e94560;
-            font-size: 0.9rem;
+        .message-entry .direction.outgoing {
+            background: #ef4444;
+            color: #fff;
+        }
+        .summary-log {
+            background: #16213e;
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1rem;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.85rem;
+        }
+        .summary-log-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             margin-bottom: 0.75rem;
             padding-bottom: 0.5rem;
             border-bottom: 1px solid #0f3460;
         }
-        .command-btn {
-            display: block;
-            width: 100%;
-            background: #0f3460;
-            border: 1px solid #1a4b8c;
-            color: #eee;
-            padding: 0.6rem 0.8rem;
-            border-radius: 4px;
-            cursor: pointer;
-            text-align: left;
-            margin-bottom: 0.5rem;
-            font-size: 0.85rem;
-            transition: all 0.2s;
+        .summary-log-header h3 {
+            color: #e94560;
+            font-size: 0.95rem;
         }
-        .command-btn:hover {
-            background: #1a4b8c;
-            border-color: #2563eb;
+        .summary-entry {
+            padding: 0.3rem 0;
+            color: #aaa;
+            border-bottom: 1px solid #0f3460;
         }
-        .command-btn:active {
-            transform: scale(0.98);
-        }
-        .command-btn.action {
-            border-color: #e94560;
-        }
-        .command-btn.action:hover {
-            background: #3d1a2e;
-        }
-        .command-result {
-            background: #1a1a2e;
-            border-radius: 4px;
-            padding: 0.75rem;
-            margin-top: 1rem;
-            font-family: monospace;
-            font-size: 0.8rem;
-            max-height: 200px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            word-break: break-word;
-        }
-        .command-result.error {
-            border-left: 3px solid #ef4444;
-        }
-        .command-result.success {
-            border-left: 3px solid #4ade80;
-        }
-        /* Unit action panel */
-        .unit-action-panel {
-            background: #1a1a2e;
-            border-radius: 4px;
-            padding: 0.75rem;
-            margin-bottom: 1rem;
-        }
-        .unit-action-panel select, .unit-action-panel input {
-            width: 100%;
-            background: #0f3460;
-            border: 1px solid #1a4b8c;
-            color: #eee;
-            padding: 0.5rem;
-            border-radius: 4px;
-            margin-bottom: 0.5rem;
-            font-size: 0.85rem;
-        }
-        .unit-action-panel select:disabled {
-            opacity: 0.5;
-        }
-        .unit-action-panel label {
-            display: block;
-            color: #888;
-            font-size: 0.75rem;
-            margin-bottom: 0.25rem;
-        }
-        .unit-info {
-            background: #0f3460;
-            padding: 0.5rem;
-            border-radius: 4px;
-            margin-bottom: 0.5rem;
-            font-size: 0.8rem;
-        }
-        .unit-info .unit-name {
-            color: #4ade80;
-            font-weight: 600;
-        }
-        .unit-info .unit-stats {
-            color: #888;
-            margin-top: 0.25rem;
-        }
-        .param-inputs {
-            margin: 0.5rem 0;
-        }
-        .param-inputs input {
-            margin-bottom: 0.25rem;
-        }
-        /* State viewer */
-        .state-summary {
-            background: #1a1a2e;
-            padding: 0.75rem;
-            border-radius: 4px;
-            font-size: 0.85rem;
-        }
-        .state-summary .label {
-            color: #888;
-        }
-        .state-summary .value {
-            color: #4ade80;
-            font-weight: 600;
-        }
-        /* Auto-refresh toggle */
-        .auto-refresh {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        .toggle-switch {
-            position: relative;
-            width: 40px;
-            height: 20px;
-        }
-        .toggle-switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-        .toggle-slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #374151;
-            border-radius: 20px;
-            transition: 0.3s;
-        }
-        .toggle-slider:before {
-            position: absolute;
-            content: "";
-            height: 14px;
-            width: 14px;
-            left: 3px;
-            bottom: 3px;
-            background-color: white;
-            border-radius: 50%;
-            transition: 0.3s;
-        }
-        .toggle-switch input:checked + .toggle-slider {
-            background-color: #4ade80;
-        }
-        .toggle-switch input:checked + .toggle-slider:before {
-            transform: translateX(20px);
+        .summary-entry:last-child {
+            border-bottom: none;
         }
         .empty-state {
             color: #666;
             text-align: center;
             padding: 2rem;
         }
+        .progress-bar {
+            background: #0f3460;
+            border-radius: 4px;
+            height: 8px;
+            overflow: hidden;
+            margin-top: 0.25rem;
+        }
+        .progress-fill {
+            background: #4ade80;
+            height: 100%;
+            transition: width 0.3s;
+        }
     </style>
 </head>
 <body>
     <div class="header">
         <h1>Civ V LLM Dashboard</h1>
-        <div class="status">
-            <span>Server Status:</span>
-            <div class="status-indicator" id="statusIndicator"></div>
-            <span id="statusText">Checking...</span>
+        <div class="status-bar" id="statusBar">
+            <div class="status-item">
+                <div class="status-indicator" id="dllStatus"></div>
+                <span class="status-label">DLL:</span>
+                <span class="status-value" id="dllStatusText">Checking...</span>
+            </div>
+            <div class="status-item">
+                <div class="status-indicator" id="mcpStatus"></div>
+                <span class="status-label">MCP:</span>
+                <span class="status-value" id="mcpStatusText">Checking...</span>
+            </div>
+            <div class="status-item">
+                <div class="status-indicator" id="gameStatus"></div>
+                <span class="status-label">Game:</span>
+                <span class="status-value" id="gameStatusText">Checking...</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Turn:</span>
+                <span class="status-value" id="turnNumber">-</span>
+            </div>
         </div>
     </div>
 
     <div class="container">
         <div class="panel">
             <div class="panel-header">
-                <span>Logs & Messages</span>
-                <div class="auto-refresh">
-                    <span>Auto-refresh</span>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="autoRefresh" checked>
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
+                <span>Game State</span>
             </div>
-            <div class="panel-body">
-                <div class="log-filters">
-                    <select id="messageTypeFilter">
-                        <option value="">All Types</option>
-                        <option value="turn_start">Turn Start</option>
-                        <option value="turn_complete">Turn Complete</option>
-                        <option value="notification">Notification</option>
-                        <option value="action_result">Action Result</option>
-                        <option value="tool_request">Tool Request</option>
-                        <option value="tool_response">Tool Response</option>
-                        <option value="note">Note</option>
-                    </select>
-                    <select id="directionFilter">
-                        <option value="">All Directions</option>
-                        <option value="incoming">Incoming (from DLL)</option>
-                        <option value="outgoing">Outgoing (to DLL)</option>
-                    </select>
-                    <input type="number" id="messageTurnFilter" placeholder="Min Turn" min="0" style="width: 100px;">
-                    <input type="number" id="messageLimit" placeholder="Limit" value="100" min="1" max="1000" style="width: 80px;">
-                    <button onclick="refreshMessages()">Refresh</button>
-                </div>
-                <div id="messageContainer">
-                    <div class="empty-state">Loading messages...</div>
-                </div>
+            <div class="panel-body" id="gameStatePanel">
+                <div class="empty-state">Loading game state...</div>
             </div>
         </div>
 
         <div class="panel">
             <div class="panel-header">
-                <span>MCP Commands</span>
+                <span>LLM Activity</span>
             </div>
-            <div class="panel-body">
-                <div class="command-section">
-                    <h3>State Queries</h3>
-                    <button class="command-btn" onclick="runCommand('get_game_state')">Get Game State</button>
-                    <button class="command-btn" onclick="runCommand('get_cities')">Get Cities</button>
-                    <button class="command-btn" onclick="runCommand('get_units')">Get Units</button>
-                    <button class="command-btn" onclick="runCommand('get_tech_tree')">Get Tech Tree</button>
-                    <button class="command-btn" onclick="runCommand('get_diplomacy')">Get Diplomacy</button>
-                    <button class="command-btn" onclick="runCommand('get_available_choices')">Get Available Choices</button>
-                    <button class="command-btn" onclick="runCommand('get_victory_progress')">Get Victory Progress</button>
-                    <button class="command-btn" onclick="runCommand('get_resources')">Get Resources</button>
-                    <button class="command-btn" onclick="runCommand('get_player_status')">Get Player Status</button>
-                    <button class="command-btn" onclick="runCommand('get_demographics')">Get Demographics</button>
-                    <button class="command-btn" onclick="runCommand('get_economic_overview')">Get Economic Overview</button>
-                    <button class="command-btn" onclick="runCommand('get_notifications')">Get Notifications</button>
-                    <button class="command-btn" onclick="runCommand('get_religion_overview')">Get Religion Overview</button>
-                    <button class="command-btn" onclick="runCommand('get_tech_tree')">Get Tech Tree</button>
-                    <button class="command-btn" onclick="runCommand('get_trade_route_overview')">Get Trade Route Overview</button>
-                    <button class="command-btn" onclick="runCommand('get_victory_progress')">Get Victory Progress</button>
-                    <button class="command-btn" onclick="runCommand('get_world_congress')">Get World Congress</button>
-                </div>
-
-                <div class="command-section">
-                    <h3>Actions</h3>
-                    <button class="command-btn action" onclick="endTurn()">End Turn</button>
-                    <button class="command-btn action" onclick="quickSetScoutProduction()">Set City Production to Scout</button>
-                    <button class="command-btn action" onclick="quickSetMiningResearch()">Set Research to Mining</button>
-                </div>
-
-                <div class="command-section">
-                    <h3>Unit Actions</h3>
-                    <div class="unit-action-panel">
-                        <button class="command-btn" onclick="loadUnits()" style="margin-bottom: 0.75rem;">Load Units</button>
-
-                        <label>Select Unit</label>
-                        <select id="unitSelect" onchange="onUnitSelected()" disabled>
-                            <option value="">-- Load units first --</option>
-                        </select>
-
-                        <div id="unitInfo" class="unit-info" style="display: none;"></div>
-
-                        <label>Action</label>
-                        <select id="actionSelect" onchange="onActionSelected()" disabled>
-                            <option value="">-- Select unit first --</option>
-                        </select>
-
-                        <div id="paramInputs" class="param-inputs"></div>
-
-                        <button class="command-btn action" id="sendActionBtn" onclick="sendUnitAction()" disabled>Send Action</button>
+            <div class="panel-body" id="llmActivityPanel">
+                <div class="section">
+                    <div class="section-header" onclick="toggleSection('toolCallsSection')">
+                        <span class="section-title">Recent Tool Calls</span>
+                        <span class="section-toggle" id="toolCallsToggle">▼</span>
+                    </div>
+                    <div class="section-content" id="toolCallsSection">
+                        <div id="toolCallsList">
+                            <div class="empty-state">No tool calls yet</div>
+                        </div>
                     </div>
                 </div>
-
-                <div class="command-section">
-                    <h3>City Production</h3>
-                    <div class="unit-action-panel">
-                        <button class="command-btn" onclick="loadCities()" style="margin-bottom: 0.75rem;">Load Cities</button>
-
-                        <label>Select City</label>
-                        <select id="citySelect" onchange="onCitySelected()" disabled>
-                            <option value="">-- Load cities first --</option>
-                        </select>
-
-                        <div id="cityInfo" class="unit-info" style="display: none;"></div>
-
-                        <label>Production Type</label>
-                        <select id="prodTypeSelect" onchange="onProdTypeSelected()" disabled>
-                            <option value="">-- Select city first --</option>
-                        </select>
-
-                        <label>Item</label>
-                        <select id="prodItemSelect" disabled>
-                            <option value="">-- Select type first --</option>
-                        </select>
-
-                        <button class="command-btn action" id="setProdBtn" onclick="setProduction()" disabled style="margin-top: 0.5rem;">Set Production</button>
+                <div class="section">
+                    <div class="section-header" onclick="toggleSection('messageLogSection')">
+                        <span class="section-title">Message Log</span>
+                        <span class="section-toggle" id="messageLogToggle">▼</span>
+                    </div>
+                    <div class="section-content" id="messageLogSection">
+                        <div class="message-log" id="messageLogList">
+                            <div class="empty-state">No messages yet</div>
+                        </div>
                     </div>
                 </div>
-
-                <div class="command-section">
-                    <h3>Research</h3>
-                    <div class="unit-action-panel">
-                        <button class="command-btn" onclick="loadTechs()" style="margin-bottom: 0.75rem;">Load Available Techs</button>
-
-                        <label>Select Technology</label>
-                        <select id="techSelect" disabled>
-                            <option value="">-- Load techs first --</option>
-                        </select>
-
-                        <button class="command-btn action" id="chooseTechBtn" onclick="chooseTech()" disabled style="margin-top: 0.5rem;">Choose Tech</button>
-                    </div>
-                </div>
-
-                <div class="command-section">
-                    <h3>Server</h3>
-                    <button class="command-btn" onclick="checkHealth()">Health Check</button>
-                    <button class="command-btn" onclick="pingServer()">Ping</button>
-                    <button class="command-btn" onclick="getTools()">List Tools</button>
-                </div>
-
-                <div id="commandResult" class="command-result" style="display: none;"></div>
             </div>
+        </div>
+    </div>
+
+    <div class="summary-log">
+        <div class="summary-log-header">
+            <h3>Summary Log</h3>
+        </div>
+        <div id="summaryLogContent">
+            <div class="summary-entry">Waiting for activity...</div>
         </div>
     </div>
 
     <script>
         const MCP_BASE = 'http://localhost:8765';
         const DASHBOARD_BASE = '';
-        let refreshInterval = null;
-        let hideResultTimeout = null;
+        let refreshIntervals = {};
 
-        function scheduleAutoHide() {
-            if (hideResultTimeout) {
-                clearTimeout(hideResultTimeout);
-            }
-            hideResultTimeout = setTimeout(() => {
-                const resultDiv = document.getElementById('commandResult');
-                resultDiv.style.display = 'none';
-            }, 5000);
+        function toggleSection(sectionId) {
+            const section = document.getElementById(sectionId);
+            const toggle = document.getElementById(sectionId.replace('Section', 'Toggle'));
+            section.classList.toggle('collapsed');
+            toggle.textContent = section.classList.contains('collapsed') ? '▶' : '▼';
         }
 
-        // MCP command execution
-        async function runCommand(toolName, args = {}) {
-            const resultDiv = document.getElementById('commandResult');
-            resultDiv.style.display = 'block';
-            resultDiv.className = 'command-result';
-            resultDiv.textContent = 'Running...';
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return 'N/A';
+            const date = new Date(timestamp);
+            return date.toLocaleTimeString();
+        }
 
+        function formatTimeAgo(timestamp) {
+            if (!timestamp) return 'N/A';
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diff = Math.floor((now - date) / 1000);
+            if (diff < 60) return `${diff}s ago`;
+            if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+            return `${Math.floor(diff / 3600)}h ago`;
+        }
+
+        // System Status
+        async function refreshSystemStatus() {
             try {
-                const response = await fetch(`${MCP_BASE}/tool`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({tool: toolName, arguments: args})
-                });
+                const response = await fetch(`${DASHBOARD_BASE}/api/system_status`);
                 const data = await response.json();
-                resultDiv.className = 'command-result success';
-                resultDiv.textContent = JSON.stringify(data, null, 2);
-                scheduleAutoHide();
-            } catch (e) {
-                resultDiv.className = 'command-result error';
-                resultDiv.textContent = `Error: ${e.message}`;
-                scheduleAutoHide();
-            }
-        }
-
-        // End turn with current turn number
-        async function endTurn() {
-            const resultDiv = document.getElementById('commandResult');
-            resultDiv.style.display = 'block';
-            resultDiv.className = 'command-result';
-            resultDiv.textContent = 'Getting current turn...';
-
-            try {
-                // First, get the current turn number from session
-                const sessionResponse = await fetch('/api/session');
-                const sessionData = await sessionResponse.json();
-
-                // Now call end_turn with the current turn number
-                resultDiv.textContent = `Ending turn ${sessionData.turn_number}...`;
-                await runCommand('end_turn', {turn: sessionData.turn_number});
-            } catch (e) {
-                resultDiv.className = 'command-result error';
-                resultDiv.textContent = `Error: ${e.message}`;
-                scheduleAutoHide();
-            }
-        }
-
-        // Quick action: Set first city production to Scout
-        async function quickSetScoutProduction() {
-            const resultDiv = document.getElementById('commandResult');
-            resultDiv.style.display = 'block';
-            resultDiv.className = 'command-result';
-            resultDiv.textContent = 'Loading cities...';
-
-            try {
-                // Step 1: Get cities
-                const citiesResponse = await fetch(`${MCP_BASE}/tool`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({tool: 'get_cities', arguments: {}})
-                });
-                const citiesData = await citiesResponse.json();
-                const citiesResult = citiesData.result || citiesData;
-
-                if (citiesData.status === 'error' || citiesResult.error || !citiesResult.cities || citiesResult.cities.length === 0) {
-                    resultDiv.className = 'command-result error';
-                    resultDiv.textContent = `Error: ${citiesResult.error || 'No cities found'}`;
-                    scheduleAutoHide();
-                    return;
-                }
-
-                // Step 2: Get first city
-                const firstCity = citiesResult.cities[0];
-                const cityId = firstCity.id;
-                resultDiv.textContent = `Getting production options for ${firstCity.name}...`;
-
-                // Step 3: Get production options for this city
-                const prodResponse = await fetch(`${MCP_BASE}/tool`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({tool: 'get_city_production', arguments: {city_id: cityId}})
-                });
-                const prodData = await prodResponse.json();
-                const prodResult = prodData.result || prodData;
-
-                if (prodData.status === 'error' || prodResult.error) {
-                    resultDiv.className = 'command-result error';
-                    resultDiv.textContent = `Error: ${prodResult.error || JSON.stringify(prodResult)}`;
-                    scheduleAutoHide();
-                    return;
-                }
-
-                // Step 4: Find Scout in trainable units
-                const trainableUnits = prodResult.trainable_units || [];
-                const scoutUnit = trainableUnits.find(unit => 
-                    unit.name && unit.name.toLowerCase().includes('scout')
-                );
-
-                if (!scoutUnit) {
-                    resultDiv.className = 'command-result error';
-                    resultDiv.textContent = `Error: Scout not found in trainable units for ${firstCity.name}`;
-                    scheduleAutoHide();
-                    return;
-                }
-
-                // Step 5: Set production to Scout
-                resultDiv.textContent = `Setting ${firstCity.name} production to ${scoutUnit.name}...`;
-                const setProdResponse = await fetch(`${MCP_BASE}/tool`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        tool: 'set_city_production',
-                        arguments: { city_id: cityId, order_type: 0, item_id: scoutUnit.id }
-                    })
-                });
-                const setProdData = await setProdResponse.json();
-                const setProdResult = setProdData.result || setProdData;
-                const isError = setProdData.status === 'error' || setProdResult.error;
-                resultDiv.className = isError ? 'command-result error' : 'command-result success';
-                resultDiv.textContent = JSON.stringify(setProdResult, null, 2);
-                scheduleAutoHide();
-            } catch (e) {
-                resultDiv.className = 'command-result error';
-                resultDiv.textContent = `Error: ${e.message}`;
-                scheduleAutoHide();
-            }
-        }
-
-        // Quick action: Set research to Mining
-        async function quickSetMiningResearch() {
-            const resultDiv = document.getElementById('commandResult');
-            resultDiv.style.display = 'block';
-            resultDiv.className = 'command-result';
-            resultDiv.textContent = 'Loading available techs...';
-
-            try {
-                // Step 1: Get game state to find available techs
-                const stateResponse = await fetch(`${MCP_BASE}/tool`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({tool: 'get_game_state', arguments: {}})
-                });
-                const stateData = await stateResponse.json();
-                const stateResult = stateData.result || stateData;
-
-                if (stateData.status === 'error' || stateResult.error) {
-                    resultDiv.className = 'command-result error';
-                    resultDiv.textContent = `Error: ${stateResult.error || JSON.stringify(stateResult)}`;
-                    scheduleAutoHide();
-                    return;
-                }
-
-                // Step 2: Find Mining tech
-                const availableTechs = stateResult.available_techs || stateResult.researchable_techs || [];
-                const miningTech = availableTechs.find(tech => 
-                    tech.name && tech.name.toLowerCase().includes('mining')
-                );
-
-                if (!miningTech) {
-                    resultDiv.className = 'command-result error';
-                    resultDiv.textContent = `Error: Mining tech not found in available techs`;
-                    scheduleAutoHide();
-                    return;
-                }
-
-                // Step 3: Choose Mining tech
-                resultDiv.textContent = `Setting research to ${miningTech.name}...`;
-                const chooseTechResponse = await fetch(`${MCP_BASE}/tool`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        tool: 'choose_tech',
-                        arguments: { tech_id: miningTech.id }
-                    })
-                });
-                const chooseTechData = await chooseTechResponse.json();
-                const chooseTechResult = chooseTechData.result || chooseTechData;
-                const isError = chooseTechData.status === 'error' || chooseTechResult.error;
-                resultDiv.className = isError ? 'command-result error' : 'command-result success';
-                resultDiv.textContent = JSON.stringify(chooseTechResult, null, 2);
-                scheduleAutoHide();
-            } catch (e) {
-                resultDiv.className = 'command-result error';
-                resultDiv.textContent = `Error: ${e.message}`;
-                scheduleAutoHide();
-            }
-        }
-
-        async function checkHealth() {
-            const resultDiv = document.getElementById('commandResult');
-            resultDiv.style.display = 'block';
-
-            try {
-                const response = await fetch(`${MCP_BASE}/health`);
-                const data = await response.json();
-                resultDiv.className = 'command-result success';
-                resultDiv.textContent = JSON.stringify(data, null, 2);
-                updateStatus(true);
-                scheduleAutoHide();
-            } catch (e) {
-                resultDiv.className = 'command-result error';
-                resultDiv.textContent = `Error: ${e.message}`;
-                updateStatus(false);
-                scheduleAutoHide();
-            }
-        }
-
-        async function pingServer() {
-            const resultDiv = document.getElementById('commandResult');
-            resultDiv.style.display = 'block';
-            resultDiv.className = 'command-result';
-            resultDiv.textContent = 'Pinging...';
-
-            try {
-                const response = await fetch(`${MCP_BASE}/tool`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({tool: 'ping', arguments: {}})
-                });
-                const data = await response.json();
-                resultDiv.className = 'command-result success';
-                resultDiv.textContent = JSON.stringify(data, null, 2);
-                updateStatus(true);
-                scheduleAutoHide();
-            } catch (e) {
-                resultDiv.className = 'command-result error';
-                resultDiv.textContent = `Error: ${e.message}`;
-                updateStatus(false);
-                scheduleAutoHide();
-            }
-        }
-
-        async function getTools() {
-            const resultDiv = document.getElementById('commandResult');
-            resultDiv.style.display = 'block';
-
-            try {
-                const response = await fetch(`${MCP_BASE}/tools`);
-                const data = await response.json();
-                resultDiv.className = 'command-result success';
-                resultDiv.textContent = JSON.stringify(data, null, 2);
-                scheduleAutoHide();
-            } catch (e) {
-                resultDiv.className = 'command-result error';
-                resultDiv.textContent = `Error: ${e.message}`;
-                scheduleAutoHide();
-            }
-        }
-
-        function updateStatus(connected) {
-            const indicator = document.getElementById('statusIndicator');
-            const text = document.getElementById('statusText');
-
-            if (connected) {
-                indicator.classList.remove('disconnected');
-                text.textContent = 'Connected';
-            } else {
-                indicator.classList.add('disconnected');
-                text.textContent = 'Disconnected';
-            }
-        }
-
-        // Auto-refresh
-        function setupAutoRefresh() {
-            const checkbox = document.getElementById('autoRefresh');
-
-            checkbox.addEventListener('change', () => {
-                if (checkbox.checked) {
-                    refreshInterval = setInterval(refreshMessages, 2000);
+                
+                // DLL Status
+                const dllIndicator = document.getElementById('dllStatus');
+                const dllText = document.getElementById('dllStatusText');
+                if (data.dll_connected) {
+                    dllIndicator.classList.remove('disconnected', 'offline');
+                    dllText.textContent = 'Connected';
                 } else {
-                    clearInterval(refreshInterval);
+                    dllIndicator.classList.add('disconnected');
+                    dllIndicator.classList.remove('offline');
+                    dllText.textContent = 'Disconnected';
                 }
-            });
 
-            // Start auto-refresh
-            if (checkbox.checked) {
-                refreshInterval = setInterval(refreshMessages, 2000);
+                // MCP Status
+                const mcpIndicator = document.getElementById('mcpStatus');
+                const mcpText = document.getElementById('mcpStatusText');
+                if (data.mcp_online) {
+                    mcpIndicator.classList.remove('disconnected', 'offline');
+                    mcpText.textContent = 'Online';
+                } else {
+                    mcpIndicator.classList.add('offline');
+                    mcpIndicator.classList.remove('disconnected');
+                    mcpText.textContent = 'Offline';
+                }
+
+                // Game Status
+                const gameIndicator = document.getElementById('gameStatus');
+                const gameText = document.getElementById('gameStatusText');
+                if (data.game_active) {
+                    gameIndicator.classList.remove('disconnected', 'offline');
+                    gameText.textContent = 'Active';
+                } else {
+                    gameIndicator.classList.add('offline');
+                    gameIndicator.classList.remove('disconnected');
+                    gameText.textContent = 'Inactive';
+                }
+
+                // Turn Number
+                const turnNumber = document.getElementById('turnNumber');
+                turnNumber.textContent = data.turn_number !== null ? data.turn_number : '-';
+            } catch (e) {
+                console.error('Failed to fetch system status:', e);
             }
         }
 
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        // Message log management
-        async function refreshMessages() {
-            const type = document.getElementById('messageTypeFilter').value;
-            const direction = document.getElementById('directionFilter').value;
-            const turnNumber = document.getElementById('messageTurnFilter').value;
-            const limit = document.getElementById('messageLimit').value || 100;
-
+        // Game State
+        async function refreshGameState() {
             try {
-                const params = new URLSearchParams();
-                if (type) params.set('type', type);
-                if (direction) params.set('direction', direction);
-                if (turnNumber) params.set('turn_number', turnNumber);
-                params.set('limit', limit);
-
-                const response = await fetch(`${DASHBOARD_BASE}/api/messages?${params}`);
+                const response = await fetch(`${DASHBOARD_BASE}/api/game_state_summary`);
                 const data = await response.json();
+                const panel = document.getElementById('gameStatePanel');
 
-                const container = document.getElementById('messageContainer');
-                if (data.messages.length === 0) {
-                    container.innerHTML = '<div class="empty-state">No messages matching filter</div>';
+                if (data.error) {
+                    panel.innerHTML = `<div class="empty-state">${data.error}</div>`;
                     return;
                 }
 
-                container.innerHTML = data.messages.map(msg => {
-                    const timestamp = msg.timestamp ? new Date(msg.timestamp).toISOString() : 'N/A';
-                    const direction = msg.direction || 'unknown';
-                    const type = msg.type || 'unknown';
-                    const jsonStr = JSON.stringify(msg, null, 2);
-                    
-                    let chevron = '';
-                    let chevronColor = '';
-                    if (direction === 'incoming') {
-                        chevron = '◀';
-                        chevronColor = '#22c55e';
-                    } else if (direction === 'outgoing') {
-                        chevron = '▶';
-                        chevronColor = '#ef4444';
+                let html = '';
+
+                // Session Info
+                html += '<div class="section">';
+                html += '<div class="section-header" onclick="toggleSection(\'sessionSection\')">';
+                html += '<span class="section-title">Session Info</span>';
+                html += '<span class="section-toggle" id="sessionToggle">▼</span>';
+                html += '</div>';
+                html += '<div class="section-content" id="sessionSection">';
+                html += '<div class="card">';
+                html += `<div class="stat-row"><span class="stat-label">Turn:</span><span class="stat-value">${data.turn_number !== null ? data.turn_number : 'N/A'}</span></div>`;
+                html += `<div class="stat-row"><span class="stat-label">Player:</span><span class="stat-value">${data.player_name || 'N/A'}</span></div>`;
+                html += `<div class="stat-row"><span class="stat-label">Game ID:</span><span class="stat-value">${data.game_id !== null ? data.game_id : 'N/A'}</span></div>`;
+                html += `<div class="stat-row"><span class="stat-label">Session ID:</span><span class="stat-value">${data.session_id !== null ? data.session_id : 'N/A'}</span></div>`;
+                html += '</div>';
+                html += '</div>';
+                html += '</div>';
+
+                // Cities
+                if (data.cities && data.cities.length > 0) {
+                    html += '<div class="section">';
+                    html += '<div class="section-header" onclick="toggleSection(\'citiesSection\')">';
+                    html += `<span class="section-title">Cities (${data.cities.length})</span>`;
+                    html += '<span class="section-toggle" id="citiesToggle">▼</span>';
+                    html += '</div>';
+                    html += '<div class="section-content" id="citiesSection">';
+                    data.cities.forEach(city => {
+                        html += '<div class="card">';
+                        html += `<div class="card-title">${city.name || 'Unknown'}</div>`;
+                        html += `<div class="card-detail">Pop: ${city.population || 'N/A'} | Production: ${city.current_production || city.producing || 'None'}</div>`;
+                        if (city.food_per_turn !== undefined) {
+                            html += `<div class="card-detail">Food: ${city.food_per_turn}/turn | Production: ${city.production_per_turn || 0}/turn</div>`;
+                        }
+                        html += '</div>';
+                    });
+                    html += '</div>';
+                    html += '</div>';
+                }
+
+                // Units
+                if (data.units && data.units.length > 0) {
+                    html += '<div class="section">';
+                    html += '<div class="section-header" onclick="toggleSection(\'unitsSection\')">';
+                    html += `<span class="section-title">Units (${data.units.length})</span>`;
+                    html += '<span class="section-toggle" id="unitsToggle">▼</span>';
+                    html += '</div>';
+                    html += '<div class="section-content" id="unitsSection">';
+                    html += '<table class="table">';
+                    html += '<thead><tr><th>Type</th><th>Position</th><th>Moves</th><th>HP</th></tr></thead>';
+                    html += '<tbody>';
+                    data.units.forEach(unit => {
+                        const name = unit.unit_type_name || unit.name || unit.type || 'Unknown';
+                        const moves = unit.moves_remaining ?? unit.moves ?? 'N/A';
+                        const hp = unit.max_hit_points != null ? (unit.max_hit_points - (unit.damage || 0)) : (unit.hp ?? 'N/A');
+                        const maxHp = unit.max_hit_points ?? unit.max_hp ?? 'N/A';
+                        html += `<tr>`;
+                        html += `<td>${name}</td>`;
+                        html += `<td>(${unit.x}, ${unit.y})</td>`;
+                        html += `<td>${moves}</td>`;
+                        html += `<td>${hp}/${maxHp}</td>`;
+                        html += `</tr>`;
+                    });
+                    html += '</tbody></table>';
+                    html += '</div>';
+                    html += '</div>';
+                }
+
+                // Technology
+                if (data.current_tech || (data.available_techs && data.available_techs.length > 0)) {
+                    html += '<div class="section">';
+                    html += '<div class="section-header" onclick="toggleSection(\'techSection\')">';
+                    html += '<span class="section-title">Technology</span>';
+                    html += '<span class="section-toggle" id="techToggle">▼</span>';
+                    html += '</div>';
+                    html += '<div class="section-content" id="techSection">';
+                    if (data.current_tech) {
+                        html += '<div class="card">';
+                        html += `<div class="card-title">Researching: ${data.current_tech.name || 'Unknown'}</div>`;
+                        if (data.current_tech.turns !== undefined) {
+                            html += `<div class="card-detail">Turns remaining: ${data.current_tech.turns}</div>`;
+                        }
+                        html += '</div>';
                     }
-                    
-                    return `
-                        <div class="log-entry">
-                            <span class="timestamp">${timestamp}</span>
-                            <span class="level ${direction}">
-                                ${chevron ? `<span style="color: ${chevronColor}; font-size: 1.2em; margin-right: 0.25rem;">${chevron}</span>` : ''}${direction}
-                            </span>
-                            <span class="level" style="background: #6b7280; margin-left: 0.5rem;">${type}</span>
-                            <details open style="margin-top: 0.5rem;">
-                                <summary style="cursor: pointer; color: #d1d5db;">View JSON</summary>
-                                <pre style="background: #0f3460; padding: 0.5rem; margin-top: 0.5rem; border-radius: 4px; overflow-x: auto; font-size: 0.75rem;">${escapeHtml(jsonStr)}</pre>
-                            </details>
-                        </div>
-                    `;
-                }).join('');
-            } catch (e) {
-                console.error('Failed to fetch messages:', e);
-                document.getElementById('messageContainer').innerHTML = '<div class="empty-state">Error loading messages</div>';
-            }
-        }
-
-        // Unit action management
-        let loadedUnits = [];
-        const UNIT_ACTIONS = {
-            'move_unit': { label: 'Move', params: [{name: 'to', type: 'coords', label: 'Target [x,y]'}] },
-            'unit_fortify': { label: 'Fortify', params: [] },
-            'unit_sleep': { label: 'Sleep', params: [] },
-            'unit_skip': { label: 'Skip Turn', params: [] },
-            'unit_alert': { label: 'Alert', params: [] },
-            'unit_heal': { label: 'Heal', params: [] },
-            'unit_pillage': { label: 'Pillage', params: [] },
-            'unit_delete': { label: 'Delete/Disband', params: [] },
-            'unit_found_city': { label: 'Found City', params: [] },
-            'unit_ranged_attack': { label: 'Ranged Attack', params: [{name: 'target', type: 'coords', label: 'Target [x,y]'}] },
-            'unit_build': { label: 'Build', params: [{name: 'build_type', type: 'int', label: 'Build Type ID'}] },
-            'unit_auto_explore': { label: 'Auto Explore', params: [] },
-            'select_unit': { label: 'Select (UI)', params: [] },
-        };
-
-        async function loadUnits() {
-            const resultDiv = document.getElementById('commandResult');
-            resultDiv.style.display = 'block';
-            resultDiv.className = 'command-result';
-            resultDiv.textContent = 'Loading units...';
-
-            try {
-                const response = await fetch(`${MCP_BASE}/tool`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({tool: 'get_units', arguments: {}})
-                });
-                const data = await response.json();
-
-                // HTTP server wraps in {status, result}
-                const result = data.result || data;
-
-                if (data.status === 'error' || result.error) {
-                    resultDiv.className = 'command-result error';
-                    resultDiv.textContent = `Error: ${result.error || JSON.stringify(result)}`;
-                    scheduleAutoHide();
-                    return;
+                    if (data.available_techs && data.available_techs.length > 0) {
+                        html += '<div class="card">';
+                        html += `<div class="card-title">Available Techs (${data.available_techs.length})</div>`;
+                        data.available_techs.slice(0, 5).forEach(tech => {
+                            html += `<div class="card-detail">${tech.name || 'Unknown'}${tech.turns ? ` (${tech.turns} turns)` : ''}</div>`;
+                        });
+                        if (data.available_techs.length > 5) {
+                            html += `<div class="card-detail">... and ${data.available_techs.length - 5} more</div>`;
+                        }
+                        html += '</div>';
+                    }
+                    html += '</div>';
+                    html += '</div>';
                 }
 
-                // Extract units from response
-                loadedUnits = result.units || [];
+                // Resources
+                if (data.resources && (data.resources.strategic || data.resources.luxury)) {
+                    html += '<div class="section">';
+                    html += '<div class="section-header" onclick="toggleSection(\'resourcesSection\')">';
+                    html += '<span class="section-title">Resources</span>';
+                    html += '<span class="section-toggle" id="resourcesToggle">▼</span>';
+                    html += '</div>';
+                    html += '<div class="section-content" id="resourcesSection">';
+                    if (data.resources.strategic && data.resources.strategic.length > 0) {
+                        html += '<div class="card">';
+                        html += '<div class="card-title">Strategic Resources</div>';
+                        data.resources.strategic.forEach(res => {
+                            html += `<div class="card-detail">${res.name || 'Unknown'}: ${res.amount || 0}</div>`;
+                        });
+                        html += '</div>';
+                    }
+                    if (data.resources.luxury && data.resources.luxury.length > 0) {
+                        html += '<div class="card">';
+                        html += '<div class="card-title">Luxury Resources</div>';
+                        data.resources.luxury.forEach(res => {
+                            html += `<div class="card-detail">${res.name || 'Unknown'}: ${res.amount || 0}</div>`;
+                        });
+                        html += '</div>';
+                    }
+                    html += '</div>';
+                    html += '</div>';
+                }
 
-                const unitSelect = document.getElementById('unitSelect');
-                unitSelect.innerHTML = '<option value="">-- Select a unit --</option>';
+                if (html === '') {
+                    html = '<div class="empty-state">No game state available</div>';
+                }
 
-                loadedUnits.forEach(unit => {
-                    const opt = document.createElement('option');
-                    opt.value = unit.id;
-                    const name = unit.unit_type_name || unit.name || unit.type || 'Unit';
-                    opt.textContent = `[${unit.id}] ${name} @ (${unit.x}, ${unit.y})`;
-                    unitSelect.appendChild(opt);
-                });
-
-                unitSelect.disabled = false;
-                resultDiv.className = 'command-result success';
-                resultDiv.textContent = `Loaded ${loadedUnits.length} units`;
-                scheduleAutoHide();
+                panel.innerHTML = html;
             } catch (e) {
-                resultDiv.className = 'command-result error';
-                resultDiv.textContent = `Error: ${e.message}`;
-                scheduleAutoHide();
+                console.error('Failed to fetch game state:', e);
+                document.getElementById('gameStatePanel').innerHTML = '<div class="empty-state">Error loading game state</div>';
             }
         }
 
-        function onUnitSelected() {
-            const unitSelect = document.getElementById('unitSelect');
-            const actionSelect = document.getElementById('actionSelect');
-            const unitInfo = document.getElementById('unitInfo');
-            const sendBtn = document.getElementById('sendActionBtn');
+        // LLM Activity
+        async function refreshLLMActivity() {
+            try {
+                const response = await fetch(`${DASHBOARD_BASE}/api/llm_activity`);
+                const data = await response.json();
 
-            const unitId = parseInt(unitSelect.value);
-            const unit = loadedUnits.find(u => u.id === unitId);
-
-            if (!unit) {
-                unitInfo.style.display = 'none';
-                actionSelect.disabled = true;
-                actionSelect.innerHTML = '<option value="">-- Select unit first --</option>';
-                sendBtn.disabled = true;
-                return;
-            }
-
-            // Show unit info
-            const unitName = unit.unit_type_name || unit.name || unit.type || 'Unit';
-            const moves = unit.moves_remaining ?? unit.moves ?? 'N/A';
-            const hp = unit.max_hit_points != null ? (unit.max_hit_points - (unit.damage || 0)) : (unit.hp ?? 'N/A');
-            const maxHp = unit.max_hit_points ?? unit.max_hp ?? 'N/A';
-
-            unitInfo.style.display = 'block';
-            unitInfo.innerHTML = `
-                <div class="unit-name">${unitName}</div>
-                <div class="unit-stats">
-                    ID: ${unit.id} | Pos: (${unit.x}, ${unit.y}) | Moves: ${moves} | HP: ${hp}/${maxHp}
-                </div>
-            `;
-
-            // Populate actions
-            actionSelect.innerHTML = '<option value="">-- Select action --</option>';
-            for (const [actionType, actionDef] of Object.entries(UNIT_ACTIONS)) {
-                const opt = document.createElement('option');
-                opt.value = actionType;
-                opt.textContent = actionDef.label;
-                actionSelect.appendChild(opt);
-            }
-            actionSelect.disabled = false;
-            document.getElementById('paramInputs').innerHTML = '';
-            sendBtn.disabled = true;
-        }
-
-        function onActionSelected() {
-            const actionSelect = document.getElementById('actionSelect');
-            const paramInputs = document.getElementById('paramInputs');
-            const sendBtn = document.getElementById('sendActionBtn');
-
-            const actionType = actionSelect.value;
-            const actionDef = UNIT_ACTIONS[actionType];
-
-            if (!actionDef) {
-                paramInputs.innerHTML = '';
-                sendBtn.disabled = true;
-                return;
-            }
-
-            // Generate param inputs
-            if (actionDef.params.length === 0) {
-                paramInputs.innerHTML = '<div style="color: #888; font-size: 0.8rem;">No parameters needed</div>';
-            } else {
-                paramInputs.innerHTML = actionDef.params.map(p => {
-                    if (p.type === 'coords') {
+                // Tool Calls
+                const toolCallsList = document.getElementById('toolCallsList');
+                if (data.tool_calls && data.tool_calls.length > 0) {
+                    toolCallsList.innerHTML = data.tool_calls.map(call => {
+                        const timestamp = formatTimestamp(call.timestamp);
+                        const isError = call.result && (call.result.error || call.result.status === 'error');
+                        const statusClass = isError ? 'error' : 'success';
+                        const argsStr = call.arguments ? JSON.stringify(call.arguments).substring(0, 100) : '{}';
                         return `
-                            <label>${p.label}</label>
-                            <div style="display: flex; gap: 0.5rem;">
-                                <input type="number" id="param_${p.name}_x" placeholder="X" style="flex: 1;">
-                                <input type="number" id="param_${p.name}_y" placeholder="Y" style="flex: 1;">
+                            <div class="tool-call ${statusClass}">
+                                <div class="tool-call-header">
+                                    <span class="tool-name">${call.tool || 'unknown'}</span>
+                                    <span class="tool-timestamp">${timestamp}</span>
+                                </div>
+                                <div class="tool-args">Args: ${argsStr}${argsStr.length >= 100 ? '...' : ''}</div>
                             </div>
                         `;
-                    } else {
-                        return `
-                            <label>${p.label}</label>
-                            <input type="${p.type === 'int' ? 'number' : 'text'}" id="param_${p.name}" placeholder="${p.label}">
-                        `;
-                    }
-                }).join('');
-            }
-
-            sendBtn.disabled = false;
-        }
-
-        async function sendUnitAction() {
-            const unitSelect = document.getElementById('unitSelect');
-            const actionSelect = document.getElementById('actionSelect');
-            const resultDiv = document.getElementById('commandResult');
-
-            const unitId = parseInt(unitSelect.value);
-            const actionType = actionSelect.value;
-            const actionDef = UNIT_ACTIONS[actionType];
-
-            if (!unitId || !actionType || !actionDef) {
-                resultDiv.style.display = 'block';
-                resultDiv.className = 'command-result error';
-                resultDiv.textContent = 'Please select a unit and action';
-                scheduleAutoHide();
-                return;
-            }
-
-            // Build action object
-            const action = { kind: actionType, unit_id: unitId };
-
-            // Collect params
-            for (const p of actionDef.params) {
-                if (p.type === 'coords') {
-                    const x = parseInt(document.getElementById(`param_${p.name}_x`).value);
-                    const y = parseInt(document.getElementById(`param_${p.name}_y`).value);
-                    if (isNaN(x) || isNaN(y)) {
-                        resultDiv.style.display = 'block';
-                        resultDiv.className = 'command-result error';
-                        resultDiv.textContent = `Please enter valid coordinates for ${p.label}`;
-                        scheduleAutoHide();
-                        return;
-                    }
-                    action[p.name] = [x, y];
-                } else if (p.type === 'int') {
-                    const val = parseInt(document.getElementById(`param_${p.name}`).value);
-                    if (isNaN(val)) {
-                        resultDiv.style.display = 'block';
-                        resultDiv.className = 'command-result error';
-                        resultDiv.textContent = `Please enter a valid number for ${p.label}`;
-                        scheduleAutoHide();
-                        return;
-                    }
-                    action[p.name] = val;
+                    }).join('');
                 } else {
-                    action[p.name] = document.getElementById(`param_${p.name}`).value;
+                    toolCallsList.innerHTML = '<div class="empty-state">No tool calls yet</div>';
                 }
-            }
 
-            resultDiv.style.display = 'block';
-            resultDiv.className = 'command-result';
-            resultDiv.textContent = `Sending ${actionType}...`;
-
-            try {
-                const response = await fetch(`${MCP_BASE}/tool`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({tool: 'send_action', arguments: {action: action}})
-                });
-                const data = await response.json();
-                const result = data.result || data;
-                const isError = data.status === 'error' || result.success === false || result.error;
-                resultDiv.className = isError ? 'command-result error' : 'command-result success';
-                resultDiv.textContent = JSON.stringify(result, null, 2);
-                scheduleAutoHide();
+                // Message Log
+                const messageLogList = document.getElementById('messageLogList');
+                if (data.messages && data.messages.length > 0) {
+                    messageLogList.innerHTML = data.messages.map(msg => {
+                        const timestamp = formatTimestamp(msg.timestamp);
+                        const direction = msg.direction || 'unknown';
+                        const type = msg.type || 'unknown';
+                        const summary = msg.summary || `${type} message`;
+                        return `
+                            <div class="message-entry">
+                                <span class="timestamp">${timestamp}</span>
+                                <span class="direction ${direction}">${direction}</span>
+                                <span>${summary}</span>
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    messageLogList.innerHTML = '<div class="empty-state">No messages yet</div>';
+                }
             } catch (e) {
-                resultDiv.className = 'command-result error';
-                resultDiv.textContent = `Error: ${e.message}`;
-                scheduleAutoHide();
+                console.error('Failed to fetch LLM activity:', e);
             }
         }
 
-        // City production management
-        let loadedCities = [];
-        const PROD_TYPES = {
-            0: { label: 'Units', key: 'trainable_units' },
-            1: { label: 'Buildings', key: 'constructable_buildings' },
-            2: { label: 'Projects/Wonders', key: 'creatable_projects' },
-            3: { label: 'Processes', key: 'maintainable_processes' }
-        };
-
-        async function loadCities() {
-            const resultDiv = document.getElementById('commandResult');
-            resultDiv.style.display = 'block';
-            resultDiv.className = 'command-result';
-            resultDiv.textContent = 'Loading cities...';
-
+        // Summary Log
+        async function refreshSummaryLog() {
             try {
-                const response = await fetch(`${MCP_BASE}/tool`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({tool: 'get_cities', arguments: {}})
-                });
+                const response = await fetch(`${DASHBOARD_BASE}/api/messages?limit=20&summary=true`);
                 const data = await response.json();
-                const result = data.result || data;
+                const content = document.getElementById('summaryLogContent');
 
-                if (data.status === 'error' || result.error) {
-                    resultDiv.className = 'command-result error';
-                    resultDiv.textContent = `Error: ${result.error || JSON.stringify(result)}`;
-                    scheduleAutoHide();
-                    return;
+                if (data.messages && data.messages.length > 0) {
+                    content.innerHTML = data.messages.map(msg => {
+                        const timestamp = formatTimestamp(msg.timestamp);
+                        const summary = msg.summary || `${msg.type || 'message'}`;
+                        return `<div class="summary-entry">[${timestamp}] ${summary}</div>`;
+                    }).join('');
+                    // Auto-scroll to bottom
+                    const summaryLog = content.parentElement;
+                    summaryLog.scrollTop = summaryLog.scrollHeight;
+                } else {
+                    content.innerHTML = '<div class="summary-entry">No activity yet</div>';
                 }
-
-                loadedCities = result.cities || [];
-
-                const citySelect = document.getElementById('citySelect');
-                citySelect.innerHTML = '<option value="">-- Select a city --</option>';
-
-                loadedCities.forEach(city => {
-                    const opt = document.createElement('option');
-                    opt.value = city.id;
-                    opt.textContent = `[${city.id}] ${city.name} (Pop: ${city.population})`;
-                    citySelect.appendChild(opt);
-                });
-
-                citySelect.disabled = false;
-                resultDiv.className = 'command-result success';
-                resultDiv.textContent = `Loaded ${loadedCities.length} cities`;
-                scheduleAutoHide();
             } catch (e) {
-                resultDiv.className = 'command-result error';
-                resultDiv.textContent = `Error: ${e.message}`;
-                scheduleAutoHide();
+                console.error('Failed to fetch summary log:', e);
             }
         }
 
-        // Cache for city production options (keyed by city_id)
-        let cityProductionCache = {};
+        // Setup auto-refresh
+        function setupAutoRefresh() {
+            // System status every 2 seconds
+            refreshSystemStatus();
+            refreshIntervals.systemStatus = setInterval(refreshSystemStatus, 2000);
 
-        async function onCitySelected() {
-            const citySelect = document.getElementById('citySelect');
-            const prodTypeSelect = document.getElementById('prodTypeSelect');
-            const prodItemSelect = document.getElementById('prodItemSelect');
-            const cityInfo = document.getElementById('cityInfo');
-            const setProdBtn = document.getElementById('setProdBtn');
-            const resultDiv = document.getElementById('commandResult');
+            // Game state every 3 seconds
+            refreshGameState();
+            refreshIntervals.gameState = setInterval(refreshGameState, 3000);
 
-            const cityId = parseInt(citySelect.value);
-            const city = loadedCities.find(c => c.id === cityId);
+            // LLM activity every 2 seconds
+            refreshLLMActivity();
+            refreshIntervals.llmActivity = setInterval(refreshLLMActivity, 2000);
 
-            if (!city) {
-                cityInfo.style.display = 'none';
-                prodTypeSelect.disabled = true;
-                prodTypeSelect.innerHTML = '<option value="">-- Select city first --</option>';
-                prodItemSelect.disabled = true;
-                prodItemSelect.innerHTML = '<option value="">-- Select type first --</option>';
-                setProdBtn.disabled = true;
-                return;
-            }
-
-            // Show city info
-            const currentProd = city.current_production || city.producing || 'None';
-            cityInfo.style.display = 'block';
-            cityInfo.innerHTML = `
-                <div class="unit-name">${city.name}</div>
-                <div class="unit-stats">
-                    Pop: ${city.population} | Production: ${currentProd}
-                </div>
-            `;
-
-            // Reset dropdowns while loading
-            prodTypeSelect.innerHTML = '<option value="">Loading production options...</option>';
-            prodTypeSelect.disabled = true;
-            prodItemSelect.innerHTML = '<option value="">-- Select type first --</option>';
-            prodItemSelect.disabled = true;
-            setProdBtn.disabled = true;
-
-            // Fetch production options for this city
-            try {
-                const response = await fetch(`${MCP_BASE}/tool`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({tool: 'get_city_production', arguments: {city_id: cityId}})
-                });
-                const data = await response.json();
-                const result = data.result || data;
-
-                if (data.status === 'error' || result.error) {
-                    prodTypeSelect.innerHTML = '<option value="">-- Error loading --</option>';
-                    resultDiv.style.display = 'block';
-                    resultDiv.className = 'command-result error';
-                    resultDiv.textContent = `Error: ${result.error || JSON.stringify(result)}`;
-                    scheduleAutoHide();
-                    return;
-                }
-
-                // Cache the production options
-                cityProductionCache[cityId] = result;
-
-                // Populate production types
-                prodTypeSelect.innerHTML = '<option value="">-- Select type --</option>';
-                for (const [typeId, typeDef] of Object.entries(PROD_TYPES)) {
-                    const items = result[typeDef.key] || [];
-                    if (items.length > 0 || typeId == 3) { // Always show processes
-                        const opt = document.createElement('option');
-                        opt.value = typeId;
-                        opt.textContent = `${typeDef.label} (${items.length})`;
-                        prodTypeSelect.appendChild(opt);
-                    }
-                }
-                prodTypeSelect.disabled = false;
-            } catch (e) {
-                prodTypeSelect.innerHTML = '<option value="">-- Error loading --</option>';
-                resultDiv.style.display = 'block';
-                resultDiv.className = 'command-result error';
-                resultDiv.textContent = `Error: ${e.message}`;
-                scheduleAutoHide();
-            }
-        }
-
-        function onProdTypeSelected() {
-            const citySelect = document.getElementById('citySelect');
-            const prodTypeSelect = document.getElementById('prodTypeSelect');
-            const prodItemSelect = document.getElementById('prodItemSelect');
-            const setProdBtn = document.getElementById('setProdBtn');
-
-            const cityId = parseInt(citySelect.value);
-            const orderType = parseInt(prodTypeSelect.value);
-
-            // Use cached production options
-            const cityProd = cityProductionCache[cityId];
-
-            if (!cityProd || isNaN(orderType)) {
-                prodItemSelect.innerHTML = '<option value="">-- Select type first --</option>';
-                prodItemSelect.disabled = true;
-                setProdBtn.disabled = true;
-                return;
-            }
-
-            const typeDef = PROD_TYPES[orderType];
-            const items = cityProd[typeDef.key] || [];
-
-            prodItemSelect.innerHTML = '<option value="">-- Select item --</option>';
-            items.forEach(item => {
-                const opt = document.createElement('option');
-                opt.value = item.id;
-                const turns = item.turns ? ` (${item.turns} turns)` : '';
-                opt.textContent = `${item.name}${turns}`;
-                prodItemSelect.appendChild(opt);
-            });
-
-            prodItemSelect.disabled = items.length === 0;
-            setProdBtn.disabled = true;
-
-            // Enable button when item is selected
-            prodItemSelect.onchange = () => {
-                setProdBtn.disabled = !prodItemSelect.value;
-            };
-        }
-
-        async function setProduction() {
-            const citySelect = document.getElementById('citySelect');
-            const prodTypeSelect = document.getElementById('prodTypeSelect');
-            const prodItemSelect = document.getElementById('prodItemSelect');
-            const resultDiv = document.getElementById('commandResult');
-
-            const cityId = parseInt(citySelect.value);
-            const orderType = parseInt(prodTypeSelect.value);
-            const itemId = parseInt(prodItemSelect.value);
-
-            if (isNaN(cityId) || isNaN(orderType) || isNaN(itemId)) {
-                resultDiv.style.display = 'block';
-                resultDiv.className = 'command-result error';
-                resultDiv.textContent = 'Please select city, type, and item';
-                scheduleAutoHide();
-                return;
-            }
-
-            resultDiv.style.display = 'block';
-            resultDiv.className = 'command-result';
-            resultDiv.textContent = 'Setting production...';
-
-            try {
-                const response = await fetch(`${MCP_BASE}/tool`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        tool: 'set_city_production',
-                        arguments: { city_id: cityId, order_type: orderType, item_id: itemId }
-                    })
-                });
-                const data = await response.json();
-                const result = data.result || data;
-                const isError = data.status === 'error' || result.error;
-                resultDiv.className = isError ? 'command-result error' : 'command-result success';
-                resultDiv.textContent = JSON.stringify(result, null, 2);
-                scheduleAutoHide();
-            } catch (e) {
-                resultDiv.className = 'command-result error';
-                resultDiv.textContent = `Error: ${e.message}`;
-                scheduleAutoHide();
-            }
-        }
-
-        // Research management
-        let loadedTechs = [];
-
-        async function loadTechs() {
-            const resultDiv = document.getElementById('commandResult');
-            resultDiv.style.display = 'block';
-            resultDiv.className = 'command-result';
-            resultDiv.textContent = 'Loading available techs...';
-
-            try {
-                const response = await fetch(`${MCP_BASE}/tool`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({tool: 'get_game_state', arguments: {}})
-                });
-                const data = await response.json();
-                const result = data.result || data;
-
-                if (data.status === 'error' || result.error) {
-                    resultDiv.className = 'command-result error';
-                    resultDiv.textContent = `Error: ${result.error || JSON.stringify(result)}`;
-                    scheduleAutoHide();
-                    return;
-                }
-
-                // Extract available techs from game state
-                loadedTechs = result.available_techs || result.researchable_techs || [];
-
-                const techSelect = document.getElementById('techSelect');
-                const chooseTechBtn = document.getElementById('chooseTechBtn');
-
-                techSelect.innerHTML = '<option value="">-- Select a tech --</option>';
-
-                if (loadedTechs.length === 0) {
-                    techSelect.innerHTML = '<option value="">-- No techs available --</option>';
-                    techSelect.disabled = true;
-                    chooseTechBtn.disabled = true;
-                    resultDiv.className = 'command-result';
-                    resultDiv.textContent = 'No researchable techs found in game state';
-                    scheduleAutoHide();
-                    return;
-                }
-
-                loadedTechs.forEach(tech => {
-                    const opt = document.createElement('option');
-                    opt.value = tech.id;
-                    const turns = tech.turns ? ` (${tech.turns} turns)` : '';
-                    const cost = tech.cost ? ` [${tech.cost}]` : '';
-                    opt.textContent = `${tech.name}${turns}${cost}`;
-                    techSelect.appendChild(opt);
-                });
-
-                techSelect.disabled = false;
-                techSelect.onchange = () => {
-                    chooseTechBtn.disabled = !techSelect.value;
-                };
-
-                resultDiv.className = 'command-result success';
-                resultDiv.textContent = `Loaded ${loadedTechs.length} available techs`;
-                scheduleAutoHide();
-            } catch (e) {
-                resultDiv.className = 'command-result error';
-                resultDiv.textContent = `Error: ${e.message}`;
-                scheduleAutoHide();
-            }
-        }
-
-        async function chooseTech() {
-            const techSelect = document.getElementById('techSelect');
-            const resultDiv = document.getElementById('commandResult');
-
-            const techId = parseInt(techSelect.value);
-
-            if (isNaN(techId)) {
-                resultDiv.style.display = 'block';
-                resultDiv.className = 'command-result error';
-                resultDiv.textContent = 'Please select a technology';
-                scheduleAutoHide();
-                return;
-            }
-
-            resultDiv.style.display = 'block';
-            resultDiv.className = 'command-result';
-            resultDiv.textContent = 'Setting research...';
-
-            try {
-                const response = await fetch(`${MCP_BASE}/tool`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        tool: 'choose_tech',
-                        arguments: { tech_id: techId }
-                    })
-                });
-                const data = await response.json();
-                const result = data.result || data;
-                const isError = data.status === 'error' || result.error;
-                resultDiv.className = isError ? 'command-result error' : 'command-result success';
-                resultDiv.textContent = JSON.stringify(result, null, 2);
-                scheduleAutoHide();
-            } catch (e) {
-                resultDiv.className = 'command-result error';
-                resultDiv.textContent = `Error: ${e.message}`;
-                scheduleAutoHide();
-            }
+            // Summary log every 2 seconds
+            refreshSummaryLog();
+            refreshIntervals.summaryLog = setInterval(refreshSummaryLog, 2000);
         }
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
-            refreshMessages();
-            checkHealth();
             setupAutoRefresh();
-
-            // Message filter handlers
-            document.getElementById('messageTypeFilter').addEventListener('change', refreshMessages);
-            document.getElementById('directionFilter').addEventListener('change', refreshMessages);
-            document.getElementById('messageTurnFilter').addEventListener('keyup', (e) => {
-                if (e.key === 'Enter') refreshMessages();
-            });
         });
     </script>
 </body>
@@ -1450,47 +740,209 @@ def create_dashboard_app(
     def index():
         return render_template_string(DASHBOARD_HTML)
 
-    @app.route("/api/state")
-    def api_state():
+    @app.route("/api/system_status")
+    def api_system_status():
+        """Get system status (DLL pipe, MCP server, game connection)."""
+        game_state_obj = app.config.get("game_state")
         mcp = app.config.get("mcp_server")
+
+        # DLL connection status
+        dll_connected = False
+        if game_state_obj:
+            dll_connected = game_state_obj.connected
+
+        # MCP server status (check health endpoint)
+        mcp_online = False
         if mcp:
-            # Query game state via the tool - this goes to the DLL
             try:
-                result = mcp.execute_tool("get_game_state", {})
-                return jsonify(result)
-            except Exception as e:
-                return jsonify({"error": f"Failed to get state: {e}"})
-        return jsonify({"error": "No MCP server available"})
+                import urllib.request
+                import urllib.error
+                req = urllib.request.Request(f"http://localhost:8765/health", method="GET")
+                with urllib.request.urlopen(req, timeout=1) as response:
+                    if response.status == 200:
+                        mcp_online = True
+            except Exception:
+                pass
 
-    @app.route("/api/tools")
-    def api_tools():
+        # Game active status
+        game_active = False
+        turn_number = None
+        if game_state_obj:
+            metadata = game_state_obj.get_metadata()
+            game_active = metadata.get("turn_number") is not None and metadata.get("connected", False)
+            turn_number = metadata.get("turn_number")
+
+        return jsonify({
+            "dll_connected": dll_connected,
+            "mcp_online": mcp_online,
+            "game_active": game_active,
+            "turn_number": turn_number,
+        })
+
+    @app.route("/api/game_state_summary")
+    def api_game_state_summary():
+        """Get formatted game state summary."""
         mcp = app.config.get("mcp_server")
-        tools = mcp.get_tools() if mcp else []
-        return jsonify({"tools": tools})
+        game_state_obj = app.config.get("game_state")
 
-    @app.route("/api/session")
-    def api_session():
-        """Get current game and session info."""
-        game_state = app.config.get("game_state")
-        
-        if game_state:
-            metadata = game_state.get_metadata()
-            return jsonify({
-                "game_id": metadata["game_id"],
-                "session_id": metadata["session_id"],
-                "turn_number": metadata["turn_number"],
-                "player_id": metadata["player_id"],
-                "player_name": metadata["player_name"],
-                "connected": metadata["connected"]
+        if not mcp:
+            return jsonify({"error": "No MCP server available"})
+
+        try:
+            # Get game state from MCP server
+            result = mcp.execute_tool("get_game_state", {})
+            
+            # Extract data from result
+            state_data = result.get("result", result) if isinstance(result, dict) and "result" in result else result
+
+            # Format response
+            summary = {
+                "turn_number": None,
+                "player_name": None,
+                "game_id": None,
+                "session_id": None,
+                "cities": [],
+                "units": [],
+                "current_tech": None,
+                "available_techs": [],
+                "resources": {
+                    "strategic": [],
+                    "luxury": []
+                }
+            }
+
+            # Get metadata from game_state
+            if game_state_obj:
+                metadata = game_state_obj.get_metadata()
+                summary["turn_number"] = metadata.get("turn_number")
+                summary["player_name"] = metadata.get("player_name")
+                summary["game_id"] = metadata.get("game_id")
+                summary["session_id"] = metadata.get("session_id")
+
+            # Extract cities
+            if "cities" in state_data:
+                summary["cities"] = state_data["cities"]
+            elif "result" in state_data and "cities" in state_data["result"]:
+                summary["cities"] = state_data["result"]["cities"]
+
+            # Extract units
+            if "units" in state_data:
+                summary["units"] = state_data["units"]
+            elif "result" in state_data and "units" in state_data["result"]:
+                summary["units"] = state_data["result"]["units"]
+
+            # Extract technology info
+            if "current_tech" in state_data:
+                summary["current_tech"] = state_data["current_tech"]
+            elif "researching_tech" in state_data:
+                summary["current_tech"] = state_data["researching_tech"]
+
+            if "available_techs" in state_data:
+                summary["available_techs"] = state_data["available_techs"]
+            elif "researchable_techs" in state_data:
+                summary["available_techs"] = state_data["researchable_techs"]
+
+            # Extract resources (if available)
+            if "resources" in state_data:
+                summary["resources"] = state_data["resources"]
+            elif "strategic_resources" in state_data or "luxury_resources" in state_data:
+                summary["resources"] = {
+                    "strategic": state_data.get("strategic_resources", []),
+                    "luxury": state_data.get("luxury_resources", [])
+                }
+
+            return jsonify(summary)
+        except Exception as e:
+            return jsonify({"error": f"Failed to get game state: {e}"})
+
+    @app.route("/api/llm_activity")
+    def api_llm_activity():
+        """Get recent LLM activity (tool calls and messages)."""
+        from .game_logger import get_game_logger
+
+        mcp = app.config.get("mcp_server")
+        game_logger = get_game_logger()
+
+        # Get recent tool requests
+        tool_requests = game_logger.get_messages(
+            message_type="tool_request"
+        )
+
+        # Get recent tool responses
+        tool_responses = game_logger.get_messages(
+            message_type="tool_response"
+        )
+
+        # Combine and sort by timestamp
+        tool_calls = []
+        tool_response_map = {}
+
+        # Map responses by tool name and timestamp
+        for response in tool_responses:
+            tool_name = response.get("tool", "unknown")
+            timestamp = response.get("timestamp", "")
+            tool_response_map[tool_name] = response
+
+        # Create tool call entries from requests
+        for request in tool_requests[-30:]:  # Last 30 requests
+            tool_name = request.get("tool", "unknown")
+            timestamp = request.get("timestamp", "")
+            arguments = request.get("arguments", {})
+            
+            # Find matching response
+            result = None
+            if tool_name in tool_response_map:
+                result = tool_response_map[tool_name].get("result")
+
+            tool_calls.append({
+                "tool": tool_name,
+                "timestamp": timestamp,
+                "arguments": arguments,
+                "result": result
+            })
+
+        # Sort by timestamp (most recent first)
+        tool_calls.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        tool_calls = tool_calls[:30]  # Limit to 30
+
+        # Get recent messages (tool_request and tool_response types)
+        messages = []
+        for msg_type in ["tool_request", "tool_response"]:
+            msgs = game_logger.get_messages(message_type=msg_type)
+            messages.extend(msgs)
+
+        # Sort by timestamp and limit
+        messages.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        messages = messages[:30]
+
+        # Format messages with summary
+        formatted_messages = []
+        for msg in messages:
+            msg_type = msg.get("type", "unknown")
+            tool = msg.get("tool", "")
+            direction = msg.get("direction", "unknown")
+            
+            if msg_type == "tool_request":
+                summary = f"Tool request: {tool}"
+            elif msg_type == "tool_response":
+                result = msg.get("result", {})
+                if result.get("error") or result.get("status") == "error":
+                    summary = f"Tool response: {tool} (error)"
+                else:
+                    summary = f"Tool response: {tool} (success)"
+            else:
+                summary = f"{msg_type} message"
+
+            formatted_messages.append({
+                "timestamp": msg.get("timestamp"),
+                "type": msg_type,
+                "direction": direction,
+                "summary": summary
             })
 
         return jsonify({
-            "game_id": None,
-            "session_id": None,
-            "turn_number": None,
-            "player_id": None,
-            "player_name": None,
-            "connected": False
+            "tool_calls": tool_calls,
+            "messages": formatted_messages
         })
 
     @app.route("/api/messages")
@@ -1506,6 +958,7 @@ def create_dashboard_app(
         session_id = request.args.get("session_id", type=int)
         current_game_only = request.args.get("current_game", type=bool, default=False)
         limit = int(request.args.get("limit", 100))
+        summary_format = request.args.get("summary", type=bool, default=False)
 
         # Cap limit at 1000
         limit = min(limit, 1000)
@@ -1532,6 +985,46 @@ def create_dashboard_app(
         # Return most recent messages first, limited
         messages = list(reversed(messages))[:limit]
 
+        # Format as summary if requested
+        if summary_format:
+            formatted_messages = []
+            for msg in messages:
+                msg_type = msg.get("type", "unknown")
+                direction = msg.get("direction", "unknown")
+                
+                if msg_type == "turn_start":
+                    turn = msg.get("turn", "?")
+                    summary = f"Turn {turn} started"
+                elif msg_type == "turn_complete":
+                    turn = msg.get("turn", "?")
+                    summary = f"Turn {turn} completed"
+                elif msg_type == "notification":
+                    notif_type = msg.get("notification_type", "notification")
+                    summary = f"Notification: {notif_type}"
+                elif msg_type == "action_result":
+                    action_kind = msg.get("kind", "action")
+                    success = msg.get("success", False)
+                    summary = f"Action: {action_kind} ({'success' if success else 'failed'})"
+                elif msg_type == "tool_request":
+                    tool = msg.get("tool", "unknown")
+                    summary = f"LLM called: {tool}"
+                elif msg_type == "tool_response":
+                    tool = msg.get("tool", "unknown")
+                    result = msg.get("result", {})
+                    if result.get("error") or result.get("status") == "error":
+                        summary = f"Tool response: {tool} (error)"
+                    else:
+                        summary = f"Tool response: {tool} (success)"
+                else:
+                    summary = f"{msg_type} ({direction})"
+
+                formatted_messages.append({
+                    "timestamp": msg.get("timestamp"),
+                    "type": msg_type,
+                    "summary": summary
+                })
+            messages = formatted_messages
+
         return jsonify({
             "messages": messages,
             "count": len(messages),
@@ -1547,6 +1040,31 @@ def create_dashboard_app(
                 "current_game_only": current_game_only,
                 "limit": limit
             }
+        })
+
+    @app.route("/api/session")
+    def api_session():
+        """Get current game and session info."""
+        game_state_obj = app.config.get("game_state")
+        
+        if game_state_obj:
+            metadata = game_state_obj.get_metadata()
+            return jsonify({
+                "game_id": metadata["game_id"],
+                "session_id": metadata["session_id"],
+                "turn_number": metadata["turn_number"],
+                "player_id": metadata["player_id"],
+                "player_name": metadata["player_name"],
+                "connected": metadata["connected"]
+            })
+
+        return jsonify({
+            "game_id": None,
+            "session_id": None,
+            "turn_number": None,
+            "player_id": None,
+            "player_name": None,
+            "connected": False
         })
 
     return app
