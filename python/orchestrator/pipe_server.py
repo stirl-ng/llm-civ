@@ -277,9 +277,6 @@ class NamedPipeServer:
         # Reset connection state when pipe closes
         self._pipe_conn = None
         self._connection_ready.clear()
-        # Update game state connection status
-        if self.state_processor and self.state_processor.game_state:
-            self.state_processor.game_state.set_connected(False)
 
     def _serve_loop(self) -> None:
         while self._running:
@@ -344,9 +341,7 @@ class NamedPipeServer:
 
     def _client_loop(self, h: int) -> None:
         self._pipe_conn = PipeConnection(h)
-        # Update game state connection status
-        if self.state_processor and self.state_processor.game_state:
-            self.state_processor.game_state.set_connected(True)
+
         self._connection_ready.set()
         buf = (ctypes.c_char * WinAPI.BUFSIZE)()
         bytes_read = wintypes.DWORD(0)

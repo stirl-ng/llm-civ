@@ -22,7 +22,6 @@ class GameState:
         
         # Turn management
         self._turn_number: Optional[int] = None
-        self._first_turn_of_game: Optional[int] = None
         
         # Session tracking (game_id persists across saves, session_id per connection)
         self._game_id: Optional[int] = None
@@ -36,63 +35,58 @@ class GameState:
         # Last update timestamp
         self._last_update_time: float = 0.0
 
-    def update_from_turn_start(self, state: dict[str, Any]) -> None:
-        """Update state from turn_start message.
+    def update_from_message(self, state: dict[str, Any]) -> None:
+        """Update state from message.
         
         Args:
-            state: Game state dictionary from DLL turn_start message
+            state: Game state dictionary from DLL message
         """
         with self._lock:
-            turn = state.get("turn")
-            if turn is not None:
-                self._turn_number = turn
-                # Track first turn of game
-                if self._first_turn_of_game is None:
-                    self._first_turn_of_game = turn
-            
             # Update session tracking
-            if "game_id" in state:
-                self._game_id = state.get("game_id")
-            if "session_id" in state:
-                self._session_id = state.get("session_id")
-            if "player_id" in state:
-                self._player_id = state.get("player_id")
-            if "player_name" in state:
-                self._player_name = state.get("player_name")
+            if not self._connected:
+                self._connected = True
             
-            self._last_update_time = time.time()
+            if "turn" in state:
+                if self._turn_number != state.get("turn"):
+                    print('turn changed', self._turn_number, '->', state.get("turn"))
+                    self._turn_number = state.get("turn")
 
-    def update_from_heartbeat(self, state: dict[str, Any]) -> None:
-        """Update state from heartbeat message (does not reset turn).
-        
-        Heartbeats may contain updated metadata but should not change turn number.
-        
-        Args:
-            state: Game state dictionary from DLL heartbeat message
-        """
-        with self._lock:
-            # Update session tracking if present (but don't reset turn)
             if "game_id" in state:
+                if self._game_id != state.get("game_id"):
+                    print('game_id changed', self._game_id, '->', state.get("game_id"))
                 self._game_id = state.get("game_id")
-            if "session_id" in state:
-                self._session_id = state.get("session_id")
-            if "player_id" in state:
-                self._player_id = state.get("player_id")
-            if "player_name" in state:
-                self._player_name = state.get("player_name")
-            
-            self._last_update_time = time.time()
 
-    def set_connected(self, connected: bool) -> None:
-        """Update connection status.
-        
-        Args:
-            connected: Whether pipe connection is active
-        """
-        with self._lock:
-            self._connected = connected
-            if connected:
-                self._last_update_time = time.time()
+            if "session_id" in state:
+                if self._session_id != state.get("session_id"):
+                    print('session_id changed', self._session_id, '->', state.get("session_id"))
+                    self._session_id = state.get("session_id")
+
+            if "player_id" in state:
+                if self._player_id != state.get("player_id"):
+                    print('player_id changed', self._player_id, '->', state.get("player_id"))
+                    self._player_id = state.get("player_id")
+
+            if "player_name" in state:
+                if self._player_name != state.get("player_name"):
+                    print('player_name changed', self._player_name, '->', state.get("player_name"))
+                    self._player_name = state.get("player_name")
+            
+            # if "is_human" in state:
+            #     if self._is_human != state.get("is_human"):
+            #         print('is_human changed', self._is_human, '->', state.get("is_human"))
+            #         self._is_human = state.get("is_human")
+
+            # if "state" in state:
+            #     if "playersAlive" in state.get("state"):
+            #         if self._players_alive != state.get("state").get("playersAlive"):
+            #             print('players_alive changed', self._players_alive, '->', state.get("state").get("playersAlive"))
+            #             self._players_alive = state.get("state").get("playersAlive")
+            #     if "civsEver" in state.get("state"):
+            #         if self._civs_ever != state.get("state").get("civsEver"):
+            #             print('civs_ever changed', self._civs_ever, '->', state.get("state").get("civsEver"))
+            #             self._civs_ever = state.get("state").get("civsEver")
+
+            self._last_update_time = time.time()
 
     def get_metadata(self) -> dict[str, Any]:
         """Get all metadata as dictionary.
@@ -103,7 +97,6 @@ class GameState:
         with self._lock:
             return {
                 "turn_number": self._turn_number,
-                "first_turn_of_game": self._first_turn_of_game,
                 "game_id": self._game_id,
                 "session_id": self._session_id,
                 "player_id": self._player_id,
@@ -117,12 +110,6 @@ class GameState:
         """Current turn number."""
         with self._lock:
             return self._turn_number
-
-    @property
-    def first_turn_of_game(self) -> Optional[int]:
-        """First turn number of the game."""
-        with self._lock:
-            return self._first_turn_of_game
 
     @property
     def game_id(self) -> Optional[int]:
