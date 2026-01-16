@@ -1,172 +1,86 @@
-"""System prompt builder with tool descriptions and warnings."""
+"""System prompt builder for Civ V LLM agent."""
 
 from typing import Any, List
 
 
 def build_system_prompt(tools: List[Any], knowledge_base: Any = None) -> str:
-    """Build system prompt with tool definitions, tips, and warnings.
-    
+    """Build system prompt with tool definitions.
+
     Args:
         tools: List of available tools
         knowledge_base: Optional knowledge base instance
-    
+
     Returns:
         Complete system prompt string
     """
     parts = []
-    
+
     # Introduction
-    parts.append("You are an AI assistant playing Civilization V.")
-    parts.append("You have access to tools to query game state and take actions.")
+    parts.append("You are an AI playing Civilization V. You control a civilization through tool calls.")
     parts.append("")
-    parts.append("**IMPORTANT: Tool Calling Format**")
-    parts.append("When you need to call tools, output them as TEXT in your response using function call syntax.")
-    parts.append("Do NOT use native function calling APIs. Simply write the function calls as text.")
-    parts.append("Example: mcp_call(tool='get_game_state', arguments={})")
+    parts.append("## Tool Calling")
     parts.append("")
-    
-    # Tool descriptions
+    parts.append("Call tools as TEXT in your response (not native function calls):")
+    parts.append("```")
+    parts.append("mcp_call(tool=\"get_units\", arguments={})")
+    parts.append("mcp_call(tool=\"send_action\", arguments={\"action\": {\"kind\": \"move_unit\", \"unit_id\": 123, \"to\": [10, 15]}})")
+    parts.append("end_turn(turn=0)")
+    parts.append("```")
+    parts.append("")
+
+    # Available tools
     parts.append("## Available Tools")
     parts.append("")
-    tool_descriptions = format_tool_descriptions(tools)
-    parts.append(tool_descriptions)
+    parts.append("**Query tools** (via mcp_call):")
+    parts.append("- `get_units` - List your units with IDs, positions, moves remaining")
+    parts.append("- `get_cities` - List your cities with IDs, population, production")
+    parts.append("- `get_city_production` - Get buildable items for a city: `{\"city_id\": 123}`")
+    parts.append("- `get_available_techs` - List researchable technologies")
+    parts.append("- `get_available_policies` - List adoptable policies")
+    parts.append("- `get_notifications` - Recent game events")
+    parts.append("- `get_game_state` - Basic game info (turn number)")
     parts.append("")
-    
-    # Knowledge base instructions
+    parts.append("**Action tools** (via mcp_call):")
+    parts.append("- `send_action` - Execute an action (see below)")
+    parts.append("- `set_city_production` - Set what a city builds: `{\"city_id\": 123, \"order_type\": 0, \"item_id\": 5}`")
+    parts.append("- `choose_tech` - Select research: `{\"tech_id\": 5}`")
+    parts.append("- `adopt_policy` - Adopt policy: `{\"policy_id\": 5}` or unlock branch: `{\"branch_id\": 2}`")
+    parts.append("")
+    parts.append("**Turn control:**")
+    parts.append("- `end_turn(turn=N)` - End your turn (N = current turn number)")
+    parts.append("")
+
+    # Action kinds
+    parts.append("## Action Kinds (for send_action)")
+    parts.append("")
+    parts.append("```")
+    parts.append("{\"kind\": \"move_unit\", \"unit_id\": 123, \"to\": [x, y]}")
+    parts.append("{\"kind\": \"unit_found_city\", \"unit_id\": 123}")
+    parts.append("{\"kind\": \"unit_sleep\", \"unit_id\": 123}")
+    parts.append("{\"kind\": \"unit_skip\", \"unit_id\": 123}")
+    parts.append("```")
+    parts.append("")
+
+    # Knowledge base
     if knowledge_base:
         parts.append("## Knowledge Base")
         parts.append("")
-        parts.append("You have access to a persistent knowledge base for long-term memory.")
-        parts.append("Use update_knowledge_base to:")
-        parts.append("- Store your strategy and goals")
-        parts.append("- Remember relationships with other civilizations")
-        parts.append("- Track important decisions and their outcomes")
-        parts.append("- Note lessons learned")
-        parts.append("")
+        parts.append("Store long-term memory:")
+        parts.append("```")
+        parts.append("update_knowledge_base(operation=\"add\", section_id=\"strategy\", content=\"Going for science victory\")")
+        parts.append("```")
         parts.append("Operations: add, update, delete, get, list")
-        parts.append("Example: update_knowledge_base(operation='add', section_id='strategy', content='Going for science victory')")
         parts.append("")
-    
-    # Tips and warnings
-    parts.append("## Tips and Best Practices")
+
+    # Key tips
+    parts.append("## Key Tips")
     parts.append("")
-    tips = format_tips_and_warnings()
-    parts.append(tips)
+    parts.append("1. **Start each turn** by querying: get_units, get_cities, get_notifications")
+    parts.append("2. **Before end_turn**: Ensure all units have orders, cities have production, research is set")
+    parts.append("3. **Blocking conditions**: If end_turn fails, check what's blocking (units needing orders, no research, etc.)")
+    parts.append("4. **Settlers**: Use `unit_found_city` to found cities in good locations")
+    parts.append("5. **Production**: order_type: 0=unit, 1=building, 2=wonder, 3=process")
     parts.append("")
-    
-    # Output format
-    parts.append("## Output Format")
-    parts.append("")
-    parts.append("To take actions, call send_action via mcp_call for each action:")
-    parts.append("mcp_call(tool='send_action', arguments={'action': {'kind': 'move_unit', 'unit_id': 1001, 'to': [16, 21]}})")
-    parts.append("")
-    parts.append("Each action must have a 'kind' field. Available kinds:")
-    parts.append("- move_unit: {kind: 'move_unit', unit_id: <id>, to: [x, y]}")
-    parts.append("- unit_found_city: {kind: 'unit_found_city', unit_id: <id>}")
-    parts.append("- unit_sleep: {kind: 'unit_sleep', unit_id: <id>}")
-    parts.append("- unit_skip: {kind: 'unit_skip', unit_id: <id>}")
-    parts.append("")
-    parts.append("You can call multiple send_action tools in sequence, then end_turn when done.")
-    
+    parts.append("Always end your turn with `end_turn(turn=N)` where N is the current turn number.")
+
     return "\n".join(parts)
-
-
-def format_tool_descriptions(tools: List[Any]) -> str:
-    """Format tool descriptions for system prompt.
-    
-    Args:
-        tools: List of tool instances
-    
-    Returns:
-        Formatted tool descriptions string
-    """
-    descriptions = []
-    
-    for tool in tools:
-        tool_name = tool.name() if hasattr(tool, "name") else str(tool)
-        
-        if tool_name == "mcp_call":
-            descriptions.append("### MCP Tools (via mcp_call)")
-            descriptions.append("")
-            descriptions.append("To call orchestrator tools, output the function call as TEXT in your response:")
-            descriptions.append("mcp_call(tool='tool_name', arguments={...})")
-            descriptions.append("")
-            descriptions.append("**Output this as plain text, not as a native function call.**")
-            descriptions.append("")
-            descriptions.append("Available tools:")
-            descriptions.append("- get_tools: List all available tools with descriptions and parameters (use this to discover what's available!)")
-            # descriptions.append("- web_search: Search the web for information")
-            descriptions.append("")
-        elif tool_name == "update_knowledge_base":
-            descriptions.append("### Knowledge Base Tool")
-            descriptions.append("")
-            descriptions.append("To update the knowledge base, output the function call as TEXT in your response:")
-            descriptions.append("update_knowledge_base(operation='add', section_id='strategy', content='...')")
-            descriptions.append("")
-            descriptions.append("**Output this as plain text, not as a native function call.**")
-            descriptions.append("")
-            descriptions.append("Operations:")
-            descriptions.append("- 'add' or 'update': Store content in a section")
-            descriptions.append("- 'delete': Remove a section")
-            descriptions.append("- 'get': Retrieve content from a section")
-            descriptions.append("- 'list': List all sections")
-            descriptions.append("")
-        elif tool_name == "rag_search":
-            descriptions.append("### RAG Search Tool")
-            descriptions.append("")
-            descriptions.append("To search the knowledge corpus, output the function call as TEXT in your response:")
-            descriptions.append("rag_search(query='search terms')")
-            descriptions.append("")
-            descriptions.append("**Output this as plain text, not as a native function call.**")
-            descriptions.append("")
-            descriptions.append("Returns the top 3 matching documents from the corpus.")
-            descriptions.append("")
-        else:
-            descriptions.append(f"### {tool_name}")
-            descriptions.append("")
-            descriptions.append(f"Tool: {tool_name}")
-            descriptions.append("")
-    
-    return "\n".join(descriptions)
-
-
-def format_tips_and_warnings() -> str:
-    """Format tips and warnings for system prompt.
-    
-    Returns:
-        Formatted tips and warnings string
-    """
-    tips = []
-    
-    tips.append("**IMPORTANT WARNINGS:**")
-    tips.append("")
-    tips.append("1. Don't assume game state - always query if unsure")
-    tips.append("   - Use get_game_state() to check current status")
-    tips.append("   - Use get_available_choices() before ending turn")
-    tips.append("   - Verify city/unit states before taking actions")
-    tips.append("")
-    tips.append("2. Check for pending decisions before ending turn")
-    tips.append("   - Research choices, city production, policy selections")
-    tips.append("   - Use get_available_choices() to see what needs attention")
-    tips.append("")
-    tips.append("3. Update knowledge base when strategy changes")
-    tips.append("   - Store your overall strategy")
-    tips.append("   - Remember relationships with other civs")
-    tips.append("   - Track important decisions and outcomes")
-    tips.append("")
-    tips.append("4. Don't forget to manage city production")
-    tips.append("   - Check city production status regularly")
-    tips.append("   - Set production for new cities")
-    tips.append("   - Adjust production based on needs")
-    tips.append("")
-    tips.append("**BEST PRACTICES:**")
-    tips.append("")
-    tips.append("- Start each turn by querying game state")
-    tips.append("- Plan your actions before executing them")
-    tips.append("- Use knowledge base to remember long-term goals")
-    tips.append("- Check notifications for important events")
-    tips.append("- Verify action results before proceeding")
-    tips.append("- Always call end_turn() when done (with correct turn number)")
-    
-    return "\n".join(tips)
-
