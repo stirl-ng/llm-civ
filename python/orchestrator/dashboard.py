@@ -70,16 +70,18 @@ TEMPLATE = """
             display: flex;
             flex-direction: column;
             gap: 20px;
+            min-height: 0;
         }
         .panel {
             background: #16213e;
             border-radius: 8px;
             padding: 15px;
             overflow-y: auto;
+            min-height: 0;
         }
         .panel.half {
-            flex: 1;
-            min-height: 0;
+            flex: 1 1 0;
+            overflow-y: auto;
         }
         .panel h2 {
             font-size: 12px;
