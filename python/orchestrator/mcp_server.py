@@ -358,6 +358,23 @@ class CivMCPServer:
             "tech_id": "required int - ID of the technology to research",
             "player_id": "optional int - player ID (defaults to active player)"
         }),
+        # Spatial awareness tools
+        "get_visible_tiles": ("_get_visible_tiles", {}),
+        "get_map_view": ("_get_map_view", {
+            "center": "optional string - 'capital', 'unit:<id>', or '<x>,<y>' (default: 'capital')",
+            "radius": "optional int - tiles from center to edge (default: 10)",
+            "layers": "optional list[string] - which layers to show: terrain, resources, improvements, units, cities",
+            "show_legend": "optional bool - include symbol legend (default: true)"
+        }),
+        "get_unit_build_options": ("_get_unit_build_options", {
+            "unit_id": "required int - ID of the worker/builder unit",
+            "radius": "optional int - search radius from unit (default: 5)",
+            "include_all_tiles": "optional bool - include tiles with no valid builds (default: false)"
+        }),
+        "get_reachable_tiles": ("_get_reachable_tiles", {
+            "unit_id": "required int - ID of the unit",
+            "include_attacks": "optional bool - include attackable tiles (default: true)"
+        }),
     }
 
     # Placeholder tools - description only, not yet implemented in DLL
@@ -676,4 +693,126 @@ class CivMCPServer:
     def _ping(self, args: dict[str, Any]) -> dict[str, Any]:
         """Ping the DLL to check connectivity and get server status."""
         return self._send_pipe_request("ping")
+
+    def _get_visible_tiles(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Get all tiles revealed to the active player (for map rendering)."""
+        return self._send_pipe_request("get_visible_tiles")
+
+    def _get_map_view(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Render an ASCII map visualization of the game world."""
+        from .map_renderer import render_map_with_context
+
+        # Get optional parameters
+        center_str = args.get("center", "capital")
+        radius = args.get("radius", 10)
+        layers = args.get("layers")
+        show_legend = args.get("show_legend", True)
+
+        # Get tiles from DLL
+        tiles_response = self._send_pipe_request("get_visible_tiles")
+        if not tiles_response.get("success", True):
+            return tiles_response
+
+        tiles = tiles_response.get("tiles", [])
+        turn = tiles_response.get("turn")
+
+        # Get units and cities for overlay
+        units_response = self._send_pipe_request("get_units")
+        units = units_response.get("units", []) if units_response.get("success", True) else []
+
+        cities_response = self._send_pipe_request("get_cities")
+        cities = cities_response.get("cities", []) if cities_response.get("success", True) else []
+
+        # Parse center parameter
+        center = None
+        center_name = None
+
+        if center_str == "capital":
+            # Find capital city
+            for city in cities:
+                if city.get("is_capital"):
+                    center = (city["x"], city["y"])
+                    center_name = city.get("name", "Capital")
+                    break
+        elif center_str.startswith("unit:"):
+            # Center on unit
+            try:
+                unit_id = int(center_str[5:])
+                for unit in units:
+                    if unit["id"] == unit_id:
+                        center = (unit["x"], unit["y"])
+                        center_name = f"{unit.get('unit_type_name', 'Unit')} #{unit_id}"
+                        break
+            except ValueError:
+                pass
+        elif "," in center_str:
+            # Parse as coordinates
+            try:
+                parts = center_str.split(",")
+                x, y = int(parts[0]), int(parts[1])
+                center = (x, y)
+            except (ValueError, IndexError):
+                pass
+
+        # Filter units and cities to viewport if center specified
+        viewport_units = []
+        viewport_cities = []
+        if center:
+            for unit in units:
+                if abs(unit["x"] - center[0]) <= radius and abs(unit["y"] - center[1]) <= radius:
+                    viewport_units.append(unit)
+            for city in cities:
+                if abs(city["x"] - center[0]) <= radius and abs(city["y"] - center[1]) <= radius:
+                    viewport_cities.append(city)
+        else:
+            viewport_units = units
+            viewport_cities = cities
+
+        # Render map
+        map_str = render_map_with_context(
+            tiles=tiles,
+            units=viewport_units,
+            cities=viewport_cities,
+            center=center,
+            radius=radius,
+            layers=layers,
+            show_legend=show_legend,
+            turn=turn,
+            center_name=center_name
+        )
+
+        return {
+            "success": True,
+            "map": map_str,
+            "center": center,
+            "radius": radius,
+            "turn": turn,
+            "num_tiles": len(tiles),
+            "num_units": len(viewport_units),
+            "num_cities": len(viewport_cities)
+        }
+
+    def _get_unit_build_options(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Get available build options for a worker unit in its vicinity."""
+        unit_id = self._require_param(args, "unit_id", int)
+        radius = args.get("radius", 5)
+        include_all_tiles = args.get("include_all_tiles", False)
+
+        return self._send_pipe_request(
+            "get_unit_build_options",
+            unit_id=unit_id,
+            radius=radius,
+            include_all_tiles=include_all_tiles
+        )
+
+    def _get_reachable_tiles(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Get tiles that a unit can move to this turn."""
+        unit_id = self._require_param(args, "unit_id", int)
+        include_attacks = args.get("include_attacks", True)
+
+        return self._send_pipe_request(
+            "get_reachable_tiles",
+            unit_id=unit_id,
+            include_attacks=include_attacks
+        )
 
