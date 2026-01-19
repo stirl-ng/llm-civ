@@ -45,19 +45,21 @@ class MessageLogger:
     - uuid: unique identifier
     - direction: 'incoming' or 'outgoing'
     - Game metadata (turn, game_id, session_id) if GameState is set
+
+    Log files are created per-game: logs/game_{game_id}.jsonl
     """
 
-    def __init__(self, log_file: Optional[Path] = None):
+    def __init__(self, log_dir: Optional[Path] = None):
         """Initialize the message logger.
 
         Args:
-            log_file: Path to JSONL file. Defaults to python/logs/messages.jsonl
+            log_dir: Directory for log files. Defaults to python/logs/
         """
-        if log_file is None:
+        if log_dir is None:
             module_dir = Path(__file__).parent.parent
-            log_file = module_dir / "logs" / "messages.jsonl"
+            log_dir = module_dir / "logs"
 
-        self.log_file = Path(log_file)
+        self.log_dir = Path(log_dir)
         self._lock = threading.Lock()
         self._game_state: Optional["GameState"] = None
 
@@ -65,9 +67,15 @@ class MessageLogger:
         self._manual_turn: Optional[int] = None
         self._manual_game_id: Optional[int] = None
 
-        # Ensure directory and file exist
-        self.log_file.parent.mkdir(parents=True, exist_ok=True)
-        self.log_file.touch(exist_ok=True)
+        # Current log file (changes when game_id changes)
+        self._current_log_file: Optional[Path] = None
+        self._current_game_id: Optional[int] = None
+
+        # Buffer for messages before game_id is known
+        self._message_buffer: list[dict[str, Any]] = []
+
+        # Ensure directory exists
+        self.log_dir.mkdir(parents=True, exist_ok=True)
 
     def set_game_state(self, game_state: Optional["GameState"]) -> None:
         """Set GameState reference for automatic metadata injection.
@@ -89,6 +97,42 @@ class MessageLogger:
             self._manual_turn = turn
             if game_id is not None:
                 self._manual_game_id = game_id
+
+    def _get_log_file_for_game(self, game_id: int) -> Path:
+        """Get the log file path for a specific game_id.
+
+        Args:
+            game_id: Game ID (map seed)
+
+        Returns:
+            Path to game-specific log file
+        """
+        return self.log_dir / f"game_{game_id}.jsonl"
+
+    def _ensure_log_file(self, game_id: int) -> None:
+        """Switch to log file for given game_id, flushing buffer if needed.
+
+        Args:
+            game_id: Game ID to switch to
+        """
+        if self._current_game_id == game_id:
+            return  # Already on correct file
+
+        log_file = self._get_log_file_for_game(game_id)
+
+        # Flush buffered messages to the new file
+        if self._message_buffer:
+            logger.info(f"Flushing {len(self._message_buffer)} buffered messages to {log_file.name}")
+            with open(log_file, "a", encoding="utf-8") as f:
+                for entry in self._message_buffer:
+                    # Update game_id in buffered messages
+                    entry["game_id"] = game_id
+                    f.write(json.dumps(entry) + "\n")
+            self._message_buffer.clear()
+
+        self._current_log_file = log_file
+        self._current_game_id = game_id
+        logger.info(f"Switched to log file: {log_file.name}")
 
     def _get_game_metadata(self) -> dict[str, Any]:
         """Get current game metadata from GameState or manual overrides."""
@@ -118,7 +162,7 @@ class MessageLogger:
         direction: Optional[str] = None,
         **extra: Any
     ) -> str:
-        """Log a message to the JSONL file.
+        """Log a message to the appropriate game-specific JSONL file.
 
         Args:
             message: Message dict (must have 'type' field)
@@ -152,10 +196,22 @@ class MessageLogger:
             if key not in entry:
                 entry[key] = value
 
+        # Determine game_id for this message
+        game_id = entry.get("game_id")
+
         # Write to file
         with self._lock:
-            with open(self.log_file, "a", encoding="utf-8") as f:
-                f.write(json.dumps(entry) + "\n")
+            if game_id is None:
+                # No game_id yet - buffer the message
+                self._message_buffer.append(entry)
+                logger.debug(f"Buffered message (no game_id yet): {entry.get('type')}")
+            else:
+                # Ensure we're using the correct log file
+                self._ensure_log_file(game_id)
+
+                # Write to game-specific file
+                with open(self._current_log_file, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(entry) + "\n")
 
         return msg_uuid
 
@@ -221,7 +277,7 @@ class MessageLogger:
             message_type: Filter by type (e.g., 'turn_start', 'llm_request')
             direction: Filter by direction ('incoming' or 'outgoing')
             turn: Filter by exact turn number
-            game_id: Filter by game ID
+            game_id: Filter by game ID (uses current game if not specified)
             session_id: Filter by session ID
             player_id: Filter by player ID
             limit: Maximum messages to return (default 100)
@@ -230,13 +286,23 @@ class MessageLogger:
         Returns:
             List of matching messages, most recent first
         """
+        # Auto-detect game_id if not specified
+        if game_id is None:
+            metadata = self._get_game_metadata()
+            game_id = metadata.get("game_id")
+
+        if game_id is None:
+            # No game_id available - return empty
+            return []
+
         messages = []
+        log_file = self._get_log_file_for_game(game_id)
 
         with self._lock:
-            if not self.log_file.exists():
+            if not log_file.exists():
                 return []
 
-            with open(self.log_file, "r", encoding="utf-8") as f:
+            with open(log_file, "r", encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if not line:
@@ -252,8 +318,6 @@ class MessageLogger:
                     if direction and msg.get("direction") != direction:
                         continue
                     if turn is not None and msg.get("turn") != turn:
-                        continue
-                    if game_id is not None and msg.get("game_id") != game_id:
                         continue
                     if session_id is not None and msg.get("session_id") != session_id:
                         continue

@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-LOG_FILE = Path(__file__).parent.parent / "logs" / "messages.jsonl"
+LOG_DIR = Path(__file__).parent.parent / "logs"
 
 TEMPLATE = """
 <!DOCTYPE html>
@@ -1229,8 +1229,6 @@ def parse_logs(debug_mode: bool = False, verbose_mode: bool = False, game_id: in
         game_id: Filter to specific game_id (None = auto-select most recent)
     """
     debug = DebugInfo()
-    debug.log_file_name = LOG_FILE.name
-    debug.file_exists = LOG_FILE.exists()
     debug.type_counts = defaultdict(int)
 
     data = {
@@ -1251,16 +1249,75 @@ def parse_logs(debug_mode: bool = False, verbose_mode: bool = False, game_id: in
         "available_games": [],
     }
 
-    if not LOG_FILE.exists():
-        logger.warning(f"Log file not found: {LOG_FILE}")
+    # Scan for game_*.jsonl files in the logs directory
+    if not LOG_DIR.exists():
+        logger.warning(f"Log directory not found: {LOG_DIR}")
         if debug_mode:
+            debug.log_file_name = "(no log dir)"
+            debug.file_exists = False
             data["debug"] = debug.__dict__
         return data
 
-    # Parse all messages
+    game_files = list(LOG_DIR.glob("game_*.jsonl"))
+    if not game_files:
+        logger.info("No game log files found in logs directory")
+        if debug_mode:
+            debug.log_file_name = "(no game files)"
+            debug.file_exists = False
+            data["debug"] = debug.__dict__
+        return data
+
+    # Extract game_ids from filenames and sort by modification time (most recent first)
+    game_info = []
+    for file_path in game_files:
+        try:
+            # Extract game_id from filename: game_12345.jsonl -> 12345
+            gid = int(file_path.stem.split("_")[1])
+            mtime = file_path.stat().st_mtime
+            game_info.append((gid, file_path, mtime))
+        except (ValueError, IndexError):
+            logger.warning(f"Skipping malformed game file: {file_path.name}")
+            continue
+
+    if not game_info:
+        logger.warning("No valid game files found")
+        if debug_mode:
+            debug.log_file_name = "(no valid files)"
+            debug.file_exists = False
+            data["debug"] = debug.__dict__
+        return data
+
+    # Sort by mtime (most recent first)
+    game_info.sort(key=lambda x: x[2], reverse=True)
+
+    # Auto-select most recent game if not specified
+    if game_id is None:
+        game_id = game_info[0][0]
+        logger.info(f"Auto-selected most recent game_id: {game_id}")
+
+    # Find the log file for selected game
+    log_file = None
+    for gid, file_path, _ in game_info:
+        if gid == game_id:
+            log_file = file_path
+            break
+
+    if log_file is None:
+        logger.warning(f"Game {game_id} not found in logs")
+        if debug_mode:
+            debug.log_file_name = f"game_{game_id}.jsonl (not found)"
+            debug.file_exists = False
+            data["debug"] = debug.__dict__
+        return data
+
+    # Update debug info
+    debug.log_file_name = log_file.name
+    debug.file_exists = log_file.exists()
+    data["game_id"] = game_id
+
+    # Parse all messages from selected game file
     messages = []
-    game_ids = {}  # game_id -> last_seen_timestamp
-    with open(LOG_FILE, "r", encoding="utf-8") as f:
+    with open(log_file, "r", encoding="utf-8") as f:
         for line in f:
             debug.total_lines += 1
             line = line.strip()
@@ -1273,37 +1330,22 @@ def parse_logs(debug_mode: bool = False, verbose_mode: bool = False, game_id: in
                 # Track message types
                 msg_type = msg.get("type", "(no type)")
                 debug.type_counts[msg_type] += 1
-                # Track game_ids
-                msg_game_id = msg.get("game_id")
-                if msg_game_id:
-                    game_ids[msg_game_id] = msg.get("timestamp", "")
             except json.JSONDecodeError as e:
                 debug.parse_errors += 1
                 logger.warning(f"JSON parse error on line {debug.total_lines}: {e}")
                 continue
 
-    # Auto-select most recent game_id if not specified
-    if game_id is None and game_ids:
-        # Use the last game_id seen (most recent)
-        game_id = max(game_ids.keys(), key=lambda gid: game_ids[gid])
-        logger.info(f"Auto-selected most recent game_id: {game_id}")
-
-    # Build list of available games with metadata
+    # Build list of available games from scanned files
     available_games = []
-    for gid in sorted(game_ids.keys(), key=lambda gid: game_ids[gid], reverse=True):
-        game_msg_count = sum(1 for m in messages if m.get("game_id") == gid)
+    for gid, file_path, mtime in game_info:
+        # Count messages in this game file (only for display)
+        msg_count = sum(1 for line in open(file_path, "r") if line.strip())
         available_games.append({
             "game_id": gid,
-            "message_count": game_msg_count,
+            "message_count": msg_count,
             "is_current": gid == game_id,
         })
     data["available_games"] = available_games
-    data["game_id"] = game_id
-
-    # Filter messages by selected game_id
-    if game_id is not None:
-        messages = [m for m in messages if m.get("game_id") == game_id]
-        logger.info(f"Filtered to {len(messages)} messages for game_id {game_id}")
 
     # Find unrecognized types
     for t in debug.type_counts:
@@ -1611,14 +1653,14 @@ def main():
     print(f"║  Debug:    http://localhost:5000?debug=1         ║")
     print(f"║  Verbose:  http://localhost:5000?verbose=1       ║")
     print("╠══════════════════════════════════════════════════╣")
-    print(f"║  Log file: {LOG_FILE.name:<37} ║")
-    print(f"║  Path:     {str(LOG_FILE.parent):<37} ║")
+    print(f"║  Log dir:  {str(LOG_DIR):<37} ║")
     print("╚══════════════════════════════════════════════════╝")
 
-    if not LOG_FILE.exists():
-        logger.warning(f"Log file does not exist yet: {LOG_FILE}")
+    if not LOG_DIR.exists():
+        logger.warning(f"Log directory does not exist yet: {LOG_DIR}")
     else:
-        logger.info(f"Log file found: {LOG_FILE}")
+        game_files = list(LOG_DIR.glob("game_*.jsonl"))
+        logger.info(f"Found {len(game_files)} game log files in {LOG_DIR}")
 
     app.run(host="0.0.0.0", port=5000, debug=True)
 
