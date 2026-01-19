@@ -24,6 +24,65 @@ This document establishes patterns and conventions for the LLM pipe integration 
 
 This mimics how a skilled human plays: they already know what they want to build before the popup appears.
 
+## Design Philosophy: Purposeful Movement, Not Random Wandering
+
+**Key Principle**: Units should move to SPECIFIC tiles for CLEAR reasons, not move randomly or "just because."
+
+### The Problem: Random Movement
+A common issue with LLM gameplay is units moving without purpose:
+- Scouts retreading already-explored ground
+- Workers moving randomly instead of to tiles they'll improve
+- Military units wandering aimlessly
+- Units moving "just to do something" each turn
+
+### What this means:
+- **Humans** look at the map, identify objectives, then move units toward those objectives
+- **LLM** should query map state first (`get_map_view`, `get_reachable_tiles`, etc.), identify objectives, THEN move
+- **Humans** use multi-turn auto-pathing - click a distant tile and let the unit follow the path over multiple turns
+- **LLM** should do the same - `move_unit` to distant tiles, trust the game's pathfinding, don't re-command every turn
+
+### Movement Best Practices:
+
+**GOOD - Specific destination with clear purpose:**
+```json
+move_unit(unit_id=5, to=[23, 18])  // Move worker to wheat tile to build farm
+move_unit(unit_id=8, to=[40, 25])  // Move scout to unexplored region identified in map_view
+move_unit(unit_id=3, to=[15, 30])  // Move settler to high-value founding site from get_city_founding_sites
+```
+
+**BAD - Vague or random movement:**
+```json
+move_unit(unit_id=5, to=[11, 13])  // Move worker "northeast" - why? what's there?
+move_unit(unit_id=8, to=[12, 12])  // Move scout one tile - retreading explored ground
+```
+
+### Multi-Turn Auto-Pathing (Already Works!)
+The `move_unit` command already supports multi-turn movement:
+- Game calculates full A* path to destination
+- Path is cached and auto-continues on subsequent turns
+- LLM doesn't need to re-issue commands every turn
+- Unit automatically follows path until destination reached
+
+**Workflow:**
+1. Query state: `get_map_view(center="unit:5", radius=15)` to identify objectives
+2. Choose objective: "Unexplored fog-of-war region at (40, 25)"
+3. Move to objective: `move_unit(unit_id=5, to=[40, 25])`
+4. Wait: Unit auto-follows path over next 5-8 turns
+5. Unit arrives: Now query state again and choose next objective
+
+**Don't micro-manage!** If a unit is already moving toward an objective (activity="MISSION"), let it complete the journey unless circumstances change (enemy spotted, new priority).
+
+### Unit-Specific Movement Strategies:
+
+| Unit Type | Movement Strategy | Query Tools to Use |
+|-----------|-------------------|-------------------|
+| Scout | Move to fog-of-war boundaries to explore | `get_map_view` (identify unexplored regions) |
+| Settler | Move to high-value founding sites | `get_city_founding_sites` |
+| Worker | Move to tiles needing improvements | `get_builder_ai_tasks`, `get_unit_build_options` |
+| Military | Move to defensive positions or attack targets | `get_reachable_tiles`, `get_map_view` (enemy units) |
+
+See `docs/unit-tile-interactions.md` for detailed movement best practices and query tool specifications.
+
 ## Known Issues (TODO)
 
 ### 1. Unhandled popups block end_turn
