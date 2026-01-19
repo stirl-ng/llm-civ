@@ -402,6 +402,10 @@ class NamedPipeServer:
         self._pipe_conn = None
         self._connection_ready.clear()
 
+        # Reset game state when pipe disconnects
+        if self._game_state:
+            self._game_state.reset()
+
         if h:
             try:
                 WinAPI.FlushFileBuffers(h)
