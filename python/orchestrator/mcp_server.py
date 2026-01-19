@@ -299,6 +299,7 @@ class CivMCPServer:
         "get_city_production": ("_get_city_production", {"city_id": "required int"}),
         "get_units": ("_get_units", {"player_id": "optional int"}),
         "get_notifications": ("_get_notifications", {}),
+        "get_turn_blockers": ("_get_turn_blockers", {"player_id": "optional int"}),
         "get_available_techs": ("_get_available_techs", {"player_id": "optional int"}),
         "get_available_policies": ("_get_available_policies", {"player_id": "optional int"}),
         "adopt_policy": ("_adopt_policy", {
@@ -599,6 +600,13 @@ class CivMCPServer:
             "session_id": self.current_session_id,
             "player_id": self.current_player_id,
         }
+
+    def _get_turn_blockers(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Get all current end-turn blockers (units needing orders, choices, etc.)."""
+        player_id = args.get("player_id")
+        if player_id is not None:
+            return self._send_pipe_request("get_turn_blockers", player_id=player_id)
+        return self._send_pipe_request("get_turn_blockers")
 
     def _get_available_techs(self, args: dict[str, Any]) -> dict[str, Any]:
         """Get available technologies for research from DLL."""
