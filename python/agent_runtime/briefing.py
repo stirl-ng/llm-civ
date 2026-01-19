@@ -5,7 +5,7 @@ from typing import Any
 
 
 def generate_turn_briefing(turn_number: int, blockers: list[dict[str, Any]] | None = None) -> str:
-    """Generate turn announcement with blockers if present.
+    """Generate turn announcement.
 
     The LLM should proactively query game state via tools (get_units, get_cities, etc.)
     rather than having it pre-fetched here. This follows the design philosophy that
@@ -13,17 +13,7 @@ def generate_turn_briefing(turn_number: int, blockers: list[dict[str, Any]] | No
 
     Args:
         turn_number: Current turn number
-        blockers: List of end-turn blockers from turn_start message
+        blockers: Deprecated parameter (ignored, kept for backward compatibility)
     """
-    parts = [f"Turn {turn_number}."]
-
-    if blockers:
-        blocker_types = [b.get("type", "UNKNOWN") for b in blockers]
-        parts.append(f"BLOCKERS to resolve before end_turn: {blocker_types}")
-    else:
-        parts.append("No blockers.")
-
-    parts.append("Query game state and take your actions.")
-
-    return " ".join(parts)
+    return f"Turn {turn_number}. Query game state and take your actions."
 

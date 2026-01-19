@@ -264,7 +264,7 @@ def execute_tool(tool_call: dict[str, Any], tool_registry: dict[str, Any], base_
 
 # --- Core Turn Loop ---
 
-def run_turn(model, tools: list, base_url: str, turn: int, timeout: float | None = None, blockers: list | None = None) -> dict[str, Any]:
+def run_turn(model, tools: list, base_url: str, turn: int, timeout: float | None = None) -> dict[str, Any]:
     """Run a single turn: LLM → parse → execute → repeat until end_turn.
 
     Args:
@@ -280,7 +280,7 @@ def run_turn(model, tools: list, base_url: str, turn: int, timeout: float | None
 
     # Build initial messages
     system_prompt = build_system_prompt(tools)
-    briefing = generate_turn_briefing(turn, blockers=blockers)
+    briefing = generate_turn_briefing(turn)
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -456,18 +456,15 @@ def run_game_loop(model, tools: list, base_url: str, poll_interval: float = 2.0,
                 continue
 
             # New turn!
-            blockers = status.get("blockers", [])
             print(f"\n{'='*50}")
             print(f"TURN {current_turn} (game_id: {current_game_id})")
-            if blockers:
-                print(f"Blockers: {[b.get('type') for b in blockers]}")
             print(f"{'='*50}")
 
             # Update logger with turn info
             if _message_logger:
                 _message_logger.set_turn(current_turn, current_game_id)
 
-            result = run_turn(model, tools, base_url, current_turn, turn_timeout, blockers=blockers)
+            result = run_turn(model, tools, base_url, current_turn, turn_timeout)
 
             print(f"  Summary: {result['iterations']} iterations, {result['tool_calls']} tool calls")
 
