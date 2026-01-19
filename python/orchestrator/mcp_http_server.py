@@ -64,7 +64,6 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
                     "session_id": metadata.get("session_id"),
                     "player_id": metadata.get("player_id"),
                     "player_name": metadata.get("player_name"),
-                    "blockers": metadata.get("blockers", []),
                 })
             else:
                 self._send_json({
@@ -74,7 +73,6 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
                     "session_id": None,
                     "player_id": None,
                     "player_name": None,
-                    "blockers": [],
                 })
 
         elif self.path == "/about":

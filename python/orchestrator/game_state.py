@@ -31,9 +31,6 @@ class GameState:
         self._player_id: Optional[int] = None
         self._player_name: Optional[str] = None
 
-        # Turn blockers (from turn_start message)
-        self._blockers: list[dict[str, Any]] = []
-
         # Connection status
         self._connected: bool = False
         self._last_update_time: float = 0.0
@@ -83,12 +80,6 @@ class GameState:
                     logger.debug(f"Player: {self._player_name} → {new_player_name}")
                     self._player_name = new_player_name
 
-            # Update blockers from turn_start messages
-            if "blockers" in message:
-                self._blockers = message["blockers"]
-                if self._blockers:
-                    logger.debug(f"Blockers: {[b.get('type') for b in self._blockers]}")
-
             self._last_update_time = time.time()
 
     def get_metadata(self) -> dict[str, Any]:
@@ -104,7 +95,6 @@ class GameState:
                 "session_id": self._session_id,
                 "player_id": self._player_id,
                 "player_name": self._player_name,
-                "blockers": self._blockers,
                 "connected": self._connected,
                 "last_update_time": self._last_update_time,
             }
@@ -117,7 +107,6 @@ class GameState:
             self._session_id = None
             self._player_id = None
             self._player_name = None
-            self._blockers = []
             self._connected = False
             self._last_update_time = 0.0
             logger.info("Game state reset")
