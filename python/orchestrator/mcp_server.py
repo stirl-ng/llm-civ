@@ -323,6 +323,7 @@ class CivMCPServer:
         # Action tools
         "send_action": ("_send_action", {"action": "required dict with 'kind' field"}),
         "end_turn": ("_end_turn", {"turn": "required int"}),
+        "force_end_turn": ("_force_end_turn", {}),
         # Popup choice tools
         "select_pantheon": ("_select_pantheon", {
             "belief_id": "required int - ID of the belief to select",
@@ -441,6 +442,17 @@ class CivMCPServer:
         # Send end_turn to DLL and wait for end_turn_result
         try:
             return self._send_pipe_request(request={"type": "end_turn", "turn": turn})
+        except ToolError as e:
+            return {"status": "error", "error": str(e)}
+
+    def _force_end_turn(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Force end the turn by calling doControl(CONTROL_ENDTURN), bypassing normal checks.
+
+        Use this when end_turn fails due to blockers that cannot be resolved (e.g., stuck UI).
+        This directly triggers the game's end-turn control without validation.
+        """
+        try:
+            return self._send_pipe_request(request={"type": "force_end_turn"})
         except ToolError as e:
             return {"status": "error", "error": str(e)}
 
@@ -697,11 +709,11 @@ class CivMCPServer:
         return self._send_pipe_request("ping")
 
     def _get_visible_tiles(self, args: dict[str, Any]) -> dict[str, Any]:
-        """Get all tiles revealed to the active player (for map rendering)."""
+        """Get raw tile data for all revealed tiles - use get_map_view instead for visual overview."""
         return self._send_pipe_request("get_visible_tiles")
 
     def _get_map_view(self, args: dict[str, Any]) -> dict[str, Any]:
-        """Render an ASCII map visualization of the game world."""
+        """ESSENTIAL: Get ASCII map showing terrain, units, cities, resources around a location. Use this to understand the world before moving units or making decisions."""
         from .map_renderer import render_map_with_context
 
         # Get optional parameters
@@ -795,7 +807,7 @@ class CivMCPServer:
         }
 
     def _get_unit_build_options(self, args: dict[str, Any]) -> dict[str, Any]:
-        """Get available build options for a worker unit in its vicinity."""
+        """Get what a Worker can build (farms, mines, roads, etc.) on nearby tiles. Use before issuing build commands."""
         unit_id = self._require_param(args, "unit_id", int)
         radius = args.get("radius", 5)
         include_all_tiles = args.get("include_all_tiles", False)
@@ -808,7 +820,7 @@ class CivMCPServer:
         )
 
     def _get_reachable_tiles(self, args: dict[str, Any]) -> dict[str, Any]:
-        """Get tiles that a unit can move to this turn."""
+        """Get all tiles a unit can move to THIS turn, including attackable enemies. Use to plan tactical movement."""
         unit_id = self._require_param(args, "unit_id", int)
         include_attacks = args.get("include_attacks", True)
 
