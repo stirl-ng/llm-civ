@@ -354,15 +354,17 @@ def run_turn(model, tools: list, base_url: str, turn: int, timeout: float | None
                         messages.append({"role": "user", "content": json.dumps(result)})
                     else:
                         # Verify turn actually advanced (turn_end_ack is sent before async completion)
-                        print(f"    ⏳ Waiting for turn to advance...")
+                        print(f"    ⏳ Waiting for turn to advance", end="", flush=True)
                         turn_advanced = False
                         for _ in range(20):  # Wait up to 10 seconds
+                            print(".", end="", flush=True) 
                             time.sleep(0.5)
                             status = get_status(base_url)
                             if status and status.get("turn") != turn:
                                 turn_advanced = True
                                 break
 
+                                
                         if turn_advanced:
                             print(f"  ✓ Turn {turn} ended")
                             return {"turn": turn, "iterations": iterations, "tool_calls": tool_calls_total, "success": True}
@@ -379,56 +381,17 @@ def run_turn(model, tools: list, base_url: str, turn: int, timeout: float | None
 
     return {"turn": turn, "iterations": iterations, "tool_calls": tool_calls_total, "success": False}
 
-
-def archive_logs_for_new_game(game_id: int) -> None:
-    """Archive existing log file when starting a new game."""
-    if not _message_logger:
-        return
-
-    log_file = _message_logger.log_file
-    if not log_file.exists() or log_file.stat().st_size == 0:
-        return
-
-    # Create archive filename with timestamp
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    archive_name = log_file.stem + f"_game{game_id}_{timestamp}" + log_file.suffix
-    archive_path = log_file.parent / "archive" / archive_name
-
-    archive_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Move current log to archive
-    import shutil
-    shutil.move(str(log_file), str(archive_path))
-    print(f"  📁 Archived previous game log to {archive_path.name}")
-
-    # Create fresh log file
-    log_file.touch(exist_ok=True)
-
-
 def run_game_loop(model, tools: list, base_url: str, poll_interval: float = 2.0, turn_timeout: float | None = None):
     """Main loop: poll for turns, run each turn.
 
     Args:
         turn_timeout: Optional timeout per turn in seconds. None means no timeout (wait indefinitely).
     """
-    print(f"Connecting to {base_url}...")
-
-    # Wait for orchestrator
-    for i in range(30):
-        if check_health(base_url):
-            break
-        print(f"  Waiting... ({i+1}/30)")
-        time.sleep(1)
-    else:
-        raise RuntimeError(f"Orchestrator not available at {base_url}")
-
-    print("Connected! Waiting for game...")
-
     last_turn = None
     last_game_id = None
 
     try:
-        while True:
+        while True: # TODO check for game id and such 
             status = get_status(base_url)
 
             if not status or not status.get("connected"):
@@ -443,7 +406,6 @@ def run_game_loop(model, tools: list, base_url: str, poll_interval: float = 2.0,
                 print(f"\n{'='*50}")
                 print(f"🎮 NEW GAME DETECTED (game_id: {last_game_id} → {current_game_id})")
                 print(f"{'='*50}")
-                archive_logs_for_new_game(last_game_id)
                 last_turn = None  # Reset turn tracking
 
             # Update tracked game_id
@@ -466,7 +428,7 @@ def run_game_loop(model, tools: list, base_url: str, poll_interval: float = 2.0,
 
             result = run_turn(model, tools, base_url, current_turn, turn_timeout)
 
-            print(f"  Summary: {result['iterations']} iterations, {result['tool_calls']} tool calls")
+            print(f"\nSummary: {result['iterations']} iterations, {result['tool_calls']} tool calls")
 
             last_turn = current_turn
             time.sleep(0.5)
@@ -494,6 +456,13 @@ def main():
 
     poll_interval = cfg.get("orchestrator", {}).get("poll_interval", 2.0)
     turn_timeout = cfg.get("orchestrator", {}).get("turn_timeout", None)  # None = no timeout
+
+    # Wait for orchestrator
+    print(f"Connecting to {base_url}", end="", flush=True)
+    while not check_health(base_url):
+        print(".", end="", flush=True)
+        time.sleep(1)
+    print("  Connected!")
 
     run_game_loop(model, tools, base_url, poll_interval, turn_timeout)
 

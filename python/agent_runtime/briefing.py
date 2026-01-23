@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 
-def generate_turn_briefing(turn_number: int, blockers: list[dict[str, Any]] | None = None) -> str:
+def generate_turn_briefing(turn_number: int, blockers: list[dict[str, Any]] | None = None) -> str: # TODO what the heck is this stub lol?
     """Generate turn announcement.
 
     The LLM should proactively query game state via tools (get_units, get_cities, etc.)
@@ -15,5 +15,9 @@ def generate_turn_briefing(turn_number: int, blockers: list[dict[str, Any]] | No
         turn_number: Current turn number
         blockers: Deprecated parameter (ignored, kept for backward compatibility)
     """
-    return f"Turn {turn_number}. Query game state and take your actions."
+    msg = f"Turn {turn_number}. Query game state and take your actions." 
+    user_input = input('User Input: ')
+    if user_input:
+        msg += f"\n{user_input}"
+    return msg
 
