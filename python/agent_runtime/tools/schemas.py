@@ -245,6 +245,50 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "record_lesson",
+            "description": "Record a lesson learned that will persist across games. Use when you learn something generally applicable (not game-specific). Your future self will see these lessons at the start of new games.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "lesson": {
+                        "type": "string",
+                        "description": "The lesson learned (e.g., 'Early aggression from AI often escalates to war', 'Coastal cities need naval defense')",
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": ["diplomacy", "military", "economy", "expansion", "research", "general"],
+                        "description": "Category of lesson",
+                    },
+                },
+                "required": ["lesson"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_lessons",
+            "description": "Retrieve lessons you've learned from previous games. These are your accumulated wisdom as a player.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "enum": ["diplomacy", "military", "economy", "expansion", "research", "general"],
+                        "description": "Filter by category (optional)",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max lessons to return. Default: 10",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
     # === Action Tools ===
     {
         "type": "function",

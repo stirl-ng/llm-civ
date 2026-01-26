@@ -18,8 +18,9 @@ import yaml
 from agent_runtime.models import get_model
 from agent_runtime.models.base import GenerateResponse, ToolCall
 from agent_runtime.tools.schemas import get_openai_tools
-from agent_runtime.prompts.system_prompt import build_system_prompt
+from agent_runtime.prompts import build_system_prompt
 from agent_runtime.briefing import generate_turn_briefing
+from agent_runtime.memory import get_journal
 
 # Optional: set turn on message logger for LLM response logging
 try:
@@ -143,13 +144,24 @@ def build_tool_result_message(tool_call: ToolCall, result: dict[str, Any]) -> di
 
 # --- Core Turn Loop ---
 
-def run_turn(model, base_url: str, turn: int, timeout: float | None = None) -> dict[str, Any]:
+def run_turn(
+    model,
+    base_url: str,
+    turn: int,
+    game_id: int | None = None,
+    player_name: str | None = None,
+    civ_name: str | None = None,
+    timeout: float | None = None
+) -> dict[str, Any]:
     """Run a single turn: LLM → execute tools → repeat until end_turn.
 
     Args:
         model: Model adapter instance
         base_url: Orchestrator base URL
         turn: Current turn number
+        game_id: Current game ID for journal context
+        player_name: Leader name
+        civ_name: Civilization name
         timeout: Optional timeout in seconds. None means no timeout.
 
     Returns:
@@ -160,9 +172,14 @@ def run_turn(model, base_url: str, turn: int, timeout: float | None = None) -> d
     # Get tool schemas
     tools = get_openai_tools()
 
-    # Build initial messages
+    # Build initial messages with narrative context
     system_prompt = build_system_prompt()
-    briefing = generate_turn_briefing(turn)
+    briefing = generate_turn_briefing(
+        turn_number=turn,
+        game_id=game_id,
+        player_name=player_name,
+        civ_name=civ_name,
+    )
 
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": system_prompt},
@@ -313,7 +330,19 @@ def run_game_loop(model, base_url: str, poll_interval: float = 2.0, turn_timeout
             if _message_logger:
                 _message_logger.set_turn(current_turn, current_game_id)
 
-            result = run_turn(model, base_url, current_turn, turn_timeout)
+            # Get player/civ info for narrative context
+            player_name = status.get("player_name")
+            # civ_name would come from game start info - not always in status
+            # For now, use player_name as civ identifier
+
+            result = run_turn(
+                model,
+                base_url,
+                current_turn,
+                game_id=current_game_id,
+                player_name=player_name,
+                timeout=turn_timeout,
+            )
 
             print(f"\nSummary: {result['iterations']} iterations, {result['tool_calls']} tool calls")
 
@@ -335,9 +364,14 @@ def main():
     base_url = cfg.get("orchestrator", {}).get("url", "http://localhost:8765")
     model = get_model(cfg.get("backend", {}))
 
+    # Set current player in journal for memory scoping
+    journal = get_journal()
+    player_id = journal.set_current_player(model.name())
+
     print(f"Model: {model.name()}")
+    print(f"Player ID: {player_id}")
     print(f"Orchestrator: {base_url}")
-    print(f"Using native tool calling (no regex parsing)")
+    print(f"Using native tool calling")
     print()
 
     poll_interval = cfg.get("orchestrator", {}).get("poll_interval", 2.0)
