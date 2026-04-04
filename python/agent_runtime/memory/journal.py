@@ -64,13 +64,10 @@ class Lesson:
 
 
 @dataclass
-class TurnMemory:
-    """A single turn's memory - what happened and how it felt."""
+class TurnRecap:
+    """A single turn's recap - freeform text written by the LLM."""
     turn: int
-    summary: str  # Brief narrative: what happened this turn
-    thoughts: str  # LLM's reflections: how it feels, what it's planning
-    events: list[str] = field(default_factory=list)  # Notable events (met civ, built wonder, etc.)
-    mood: str = ""  # Optional: excited, worried, confident, frustrated, etc.
+    text: str
     timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
 
 
@@ -85,7 +82,7 @@ class GameNarrative:
     story_so_far: str = ""  # Cumulative narrative summary, updated periodically
     current_strategy: str = ""
     relationships: dict[str, str] = field(default_factory=dict)  # civ_name -> relationship description
-    memories: list[TurnMemory] = field(default_factory=list)
+    memories: list[TurnRecap] = field(default_factory=list)
 
 
 @dataclass
@@ -184,7 +181,7 @@ class TurnJournal:
                 # Load games
                 for game_id_str, narrative_data in data.get("games", {}).items():
                     game_id = int(game_id_str)
-                    memories = [TurnMemory(**m) for m in narrative_data.pop("memories", [])]
+                    memories = [TurnRecap(**m) for m in narrative_data.pop("memories", [])]
                     self._narratives[game_id] = GameNarrative(**narrative_data, memories=memories)
 
             except (json.JSONDecodeError, KeyError, TypeError) as e:
@@ -232,45 +229,27 @@ class TurnJournal:
             return self._players.get(self._current_player_id)
         return None
 
-    def record_turn(
-        self,
-        game_id: int,
-        turn: int,
-        summary: str,
-        thoughts: str,
-        events: Optional[list[str]] = None,
-        mood: str = ""
-    ) -> None:
-        """Record a turn's memory.
+    def record_turn(self, game_id: int, turn: int, text: str) -> None:
+        """Record a turn recap.
 
         Args:
             game_id: Current game ID
             turn: Turn number
-            summary: Brief narrative of what happened
-            thoughts: LLM's reflections and plans
-            events: List of notable events
-            mood: Current emotional state
+            text: Freeform recap text written by the LLM
         """
         narrative = self.get_or_create_narrative(game_id)
 
-        # Update or append turn memory
         existing_idx = next(
             (i for i, m in enumerate(narrative.memories) if m.turn == turn),
             None
         )
 
-        memory = TurnMemory(
-            turn=turn,
-            summary=summary,
-            thoughts=thoughts,
-            events=events or [],
-            mood=mood
-        )
+        recap = TurnRecap(turn=turn, text=text)
 
         if existing_idx is not None:
-            narrative.memories[existing_idx] = memory
+            narrative.memories[existing_idx] = recap
         else:
-            narrative.memories.append(memory)
+            narrative.memories.append(recap)
             narrative.memories.sort(key=lambda m: m.turn)
 
         # Update player stats
@@ -356,15 +335,10 @@ class TurnJournal:
 
         self._save()
 
-    def get_recent_memories(self, game_id: int, count: int = 5) -> list[TurnMemory]:
-        """Get the most recent turn memories."""
+    def get_recaps(self, game_id: int, limit: int = 3) -> list[TurnRecap]:
+        """Get most recent turn recaps."""
         narrative = self.get_or_create_narrative(game_id)
-        return narrative.memories[-count:] if narrative.memories else []
-
-    def get_memory_for_turn(self, game_id: int, turn: int) -> Optional[TurnMemory]:
-        """Get memory for a specific turn."""
-        narrative = self.get_or_create_narrative(game_id)
-        return next((m for m in narrative.memories if m.turn == turn), None)
+        return narrative.memories[-limit:] if narrative.memories else []
 
     def build_context_summary(
         self,
@@ -417,17 +391,12 @@ class TurnJournal:
             rel_lines = [f"- {civ}: {desc}" for civ, desc in narrative.relationships.items()]
             parts.append(f"\n**Relationships:**\n" + "\n".join(rel_lines))
 
-        # Recent memories (last few turns)
-        recent = self.get_recent_memories(game_id, count=3)
+        # Recent turn recaps
+        recent = self.get_recaps(game_id, limit=3)
         if recent:
-            parts.append("\n**Recent Events:**")
+            parts.append("\n**Recent Turns:**")
             for mem in recent:
-                turn_summary = f"Turn {mem.turn}: {mem.summary}"
-                if mem.mood:
-                    turn_summary += f" (Feeling: {mem.mood})"
-                parts.append(turn_summary)
-                if mem.thoughts:
-                    parts.append(f"  → Your thoughts: {mem.thoughts}")
+                parts.append(f"Turn {mem.turn}: {mem.text}")
 
         return "\n".join(parts) if parts else ""
 

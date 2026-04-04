@@ -2,7 +2,7 @@
 
 from .journal import (
     TurnJournal,
-    TurnMemory,
+    TurnRecap,
     GameNarrative,
     PlayerProfile,
     Lesson,
@@ -12,7 +12,7 @@ from .journal import (
 
 __all__ = [
     "TurnJournal",
-    "TurnMemory",
+    "TurnRecap",
     "GameNarrative",
     "PlayerProfile",
     "Lesson",

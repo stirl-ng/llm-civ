@@ -180,65 +180,48 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "query_knowledge_base",
-            "description": "Read stored knowledge from persistent memory. Use to recall strategy, diplomatic relations, lessons learned.",
+            "name": "record_recap",
+            "description": "Record your recap of this turn. Write 2-4 sentences: what happened, what you're planning, how things are going. Called automatically during reflection, but you can call it anytime.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "section_id": {
+                    "text": {
                         "type": "string",
-                        "description": "Section to read (e.g., 'strategy', 'plan'). Omit or null for all sections.",
+                        "description": "Your turn recap (2-4 sentences on what happened and what you're planning)",
                     },
                 },
-                "required": [],
+                "required": ["text"],
             },
         },
     },
     {
         "type": "function",
         "function": {
-            "name": "update_knowledge_base",
-            "description": "Update persistent memory. Store strategy, diplomatic history, important decisions, lessons learned, multi-turn plans.",
+            "name": "update_strategy",
+            "description": "Update your current high-level strategy. This persists across turns and appears in your briefing.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "operation": {
+                    "strategy": {
                         "type": "string",
-                        "enum": ["set", "delete"],
-                        "description": "'set' to create/update, 'delete' to remove section",
-                    },
-                    "section_id": {
-                        "type": "string",
-                        "description": "Section name (e.g., 'strategy', 'plan', 'gandhi', 'lessons')",
-                    },
-                    "content": {
-                        "type": "string",
-                        "description": "Content to store (required for 'set' operation)",
+                        "description": "Your current high-level strategy",
                     },
                 },
-                "required": ["operation", "section_id"],
+                "required": ["strategy"],
             },
         },
     },
     {
         "type": "function",
         "function": {
-            "name": "get_log",
-            "description": "Query conversation history and game events. Use to review previous decisions and learn from what worked.",
+            "name": "get_recaps",
+            "description": "Get your most recent turn recaps.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "message_type": {
-                        "type": "string",
-                        "description": "Filter by type (e.g., 'llm_response', 'tool_response', 'notification')",
-                    },
-                    "turn_number": {
-                        "type": "integer",
-                        "description": "Filter by specific turn",
-                    },
                     "limit": {
                         "type": "integer",
-                        "description": "Max entries to return. Default: 100",
+                        "description": "Max recaps to return. Default: 3",
                     },
                 },
                 "required": [],
