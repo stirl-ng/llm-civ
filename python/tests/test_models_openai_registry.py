@@ -14,7 +14,7 @@ def test_openai_registry_import_guard():
     except Exception:
         pytest.skip("openai not installed")
 
-    # Constructing should succeed if openai is present; we won't call the API.
-    m = get_model({"kind": "openai", "model": "gpt-4o-mini"})
+    # Pass a dummy key so the client constructs without OPENAI_API_KEY in env.
+    m = get_model({"kind": "openai", "model": "gpt-4o-mini", "api_key": "sk-dummy"})
     assert "openai:" in m.name()
 
