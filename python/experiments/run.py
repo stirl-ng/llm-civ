@@ -19,7 +19,7 @@ from agent_runtime.models import get_model
 from agent_runtime.models.base import GenerateResponse, ToolCall
 from agent_runtime.tools.schemas import get_openai_tools
 from agent_runtime.prompts import build_system_prompt
-from agent_runtime.briefing import generate_turn_briefing
+from agent_runtime.briefing import generate_turn_briefing, generate_reflection_prompt
 from agent_runtime.memory import get_journal
 
 # Optional: set turn on message logger for LLM response logging
@@ -125,6 +125,36 @@ def execute_tool(tool_call: ToolCall, base_url: str, turn: int, game_id: int | N
                     {"content": l.content, "category": l.category, "game_id": l.source_game_id}
                     for l in lessons
                 ],
+            }
+        except Exception as e:
+            result = {"ok": False, "error": str(e)}
+        return result
+
+    if name == "record_recap":
+        try:
+            journal = get_journal()
+            journal.record_turn(game_id=game_id or 0, turn=turn, text=args.get("text", ""))
+            result = {"ok": True, "message": "Recap recorded."}
+        except Exception as e:
+            result = {"ok": False, "error": str(e)}
+        return result
+
+    if name == "update_strategy":
+        try:
+            journal = get_journal()
+            journal.update_narrative(game_id=game_id or 0, current_strategy=args.get("strategy", ""))
+            result = {"ok": True, "message": "Strategy updated."}
+        except Exception as e:
+            result = {"ok": False, "error": str(e)}
+        return result
+
+    if name == "get_recaps":
+        try:
+            journal = get_journal()
+            recaps = journal.get_recaps(game_id=game_id or 0, limit=args.get("limit", 3))
+            result = {
+                "ok": True,
+                "recaps": [{"turn": r.turn, "text": r.text} for r in recaps],
             }
         except Exception as e:
             result = {"ok": False, "error": str(e)}
@@ -247,6 +277,7 @@ def run_turn(
 
     iterations = 0
     tool_calls_total = 0
+    reflection_done = False
 
     print(f"  Starting turn {turn}...")
 
@@ -297,10 +328,23 @@ def run_turn(
                 messages.append({"role": "user", "content": f"**[Operator]:** {mid_turn_msg}"})
 
         # Execute each tool call
+        inject_reflection = False
         for tool_call in response.tool_calls:
             tool_calls_total += 1
 
             try:
+                # Reflection gate: intercept first end_turn call to prompt reflection
+                if tool_call.name in ("end_turn", "force_end_turn") and not reflection_done:
+                    print(f"    ↩ {tool_call.name} intercepted — prompting reflection")
+                    result = {
+                        "ok": True,
+                        "message": "Before ending your turn, please reflect. See the message below.",
+                        "reflection_needed": True,
+                    }
+                    messages.append(build_tool_result_message(tool_call, result))
+                    inject_reflection = True
+                    continue
+
                 result = execute_tool(tool_call, base_url, turn, game_id=game_id)
                 is_ok = result.get("ok", True)
                 print(f"    {'✓' if is_ok else '✗'} {tool_call.name}")
@@ -345,6 +389,11 @@ def run_turn(
                     tool_call,
                     {"ok": False, "error": str(e)}
                 ))
+
+        # After processing all tool calls, inject reflection prompt if needed
+        if inject_reflection:
+            messages.append({"role": "user", "content": generate_reflection_prompt(turn)})
+            reflection_done = True
 
     return {"turn": turn, "iterations": iterations, "tool_calls": tool_calls_total, "success": False}
 

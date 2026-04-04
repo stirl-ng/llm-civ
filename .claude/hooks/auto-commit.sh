@@ -11,14 +11,14 @@ files=$(git diff --cached --name-only)
 count=$(echo "$files" | wc -l | tr -d ' ')
 
 if [ "$count" -eq 1 ]; then
-  msg="chore(ai): update $files"
+  msg="hook: update $files"
 elif [ "$count" -le 3 ]; then
   summary=$(echo "$files" | tr '\n' ',' | sed 's/,$//' | sed 's/,/, /g')
-  msg="chore(ai): update $summary"
+  msg="hook: update $summary"
 else
   first=$(echo "$files" | head -1)
   rest=$((count - 1))
-  msg="chore(ai): update $first and $rest others"
+  msg="hook: update $first and $rest others"
 fi
 
 git commit -m "$msg"

@@ -94,16 +94,13 @@ def generate_reflection_prompt(turn_number: int) -> str:
     Called at the end of a turn before end_turn, asking the LLM
     to record its thoughts for future continuity.
     """
-    return f"""Before ending your turn, take a moment to reflect.
-
-**Turn {turn_number} Summary** - What happened this turn? (1-2 sentences)
-
-**Your Thoughts** - How do you feel about the current situation? What are you planning? (1-2 sentences)
-
-**Mood** - In one word, how would you describe your emotional state? (e.g., hopeful, anxious, confident, curious)
-
-Record these reflections using update_knowledge_base with section_id="turn_{turn_number}_reflection",
-then call end_turn."""
+    return (
+        f"Before ending turn {turn_number}, reflect briefly:\n"
+        "1. Call `record_recap` with 2-4 sentences on what happened and what you're planning.\n"
+        "2. Call `update_strategy` if your strategy has changed.\n"
+        "3. Call `record_lesson` if you learned something that applies beyond this game.\n"
+        "Then call `end_turn` again."
+    )
 
 
 def generate_game_start_prompt(leader_name: str, civ_name: str, personality_desc: str) -> str:
