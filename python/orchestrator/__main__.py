@@ -10,6 +10,7 @@ import os
 import sys
 from threading import Thread
 
+from .event_broadcaster import EventBroadcaster
 from .logging_setup import setup_logging
 from .mcp_http_server import MCPHTTPServer
 from .mcp_server import CivMCPServer
@@ -36,9 +37,12 @@ def run_mcp_mode(
     # Create GameState instance (single source of truth for metadata)
     game_state = GameState()
 
+    # Create broadcaster for SSE push events
+    broadcaster = EventBroadcaster()
+
     # Create pipe server (manages pipe connection, message processing, logging)
     # Pass game_state so it can update metadata from DLL messages
-    pipe_server = NamedPipeServer(pipe_path, game_state=game_state)
+    pipe_server = NamedPipeServer(pipe_path, game_state=game_state, broadcaster=broadcaster)
 
     # Create the MCP server with send_request callback and game_state
     def send_request(request: dict, timeout: float) -> dict:
@@ -61,8 +65,8 @@ def run_mcp_mode(
     if pipe_connection:
         print(f"[orchestrator] DLL connected", file=sys.stderr)
 
-    # Create HTTP server (just exposes mcp_server via HTTP)
-    http_server = MCPHTTPServer(mcp_host, mcp_port, mcp_server=mcp_server)
+    # Create HTTP server (exposes mcp_server via HTTP, plus SSE /events endpoint)
+    http_server = MCPHTTPServer(mcp_host, mcp_port, mcp_server=mcp_server, broadcaster=broadcaster)
     http_server.start()
 
     print(f"[orchestrator] MCP server: http://{mcp_host}:{mcp_port}/tool", file=sys.stderr)

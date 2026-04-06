@@ -19,6 +19,7 @@ from agent_runtime.models import get_model
 from agent_runtime.models.base import GenerateResponse, ToolCall
 from agent_runtime.tools.schemas import get_openai_tools
 from agent_runtime.prompts import build_system_prompt
+from agent_runtime.prompts.personality import get_personality
 from agent_runtime.briefing import generate_turn_briefing, generate_reflection_prompt
 from agent_runtime.memory import get_journal
 
@@ -234,6 +235,8 @@ def run_turn(
     civ_name: str | None = None,
     timeout: float | None = None,
     interactive: bool = True,
+    temperature: float = 0.7,
+    personality=None,
 ) -> dict[str, Any]:
     """Run a single turn: LLM → execute tools → repeat until end_turn.
 
@@ -261,7 +264,7 @@ def run_turn(
         operator_msg = prompt_operator(turn)
 
     # Build initial messages with narrative context
-    system_prompt = build_system_prompt(interactive=interactive)
+    system_prompt = build_system_prompt(personality=personality, interactive=interactive)
     briefing = generate_turn_briefing(
         turn_number=turn,
         game_id=game_id,
@@ -300,7 +303,7 @@ def run_turn(
 
         # Call LLM with tools
         try:
-            response = model.generate(messages, tools=tools, temperature=0.2)
+            response = model.generate(messages, tools=tools, temperature=temperature)
             preview = response.text[:150] + "..." if len(response.text) > 150 else response.text
             if preview:
                 print(f"  [{iterations}] LLM: {preview}")
@@ -398,72 +401,102 @@ def run_turn(
     return {"turn": turn, "iterations": iterations, "tool_calls": tool_calls_total, "success": False}
 
 
-def run_game_loop(model, base_url: str, poll_interval: float = 2.0, turn_timeout: float | None = None, interactive: bool = False):
-    """Main loop: poll for turns, run each turn.
+def run_game_loop(
+    model,
+    base_url: str,
+    poll_interval: float = 2.0,  # kept for backward compat — no longer used
+    turn_timeout: float | None = None,
+    interactive: bool = False,
+    temperature: float = 0.7,
+    personality=None,
+):
+    """Main loop: subscribe to SSE turn events, run each turn.
+
+    poll_interval kept for backward compatibility but is no longer used.
+    The loop now blocks on the /events SSE stream and wakes immediately on
+    each turn_start event pushed by the orchestrator.
 
     Args:
         model: Model adapter instance
         base_url: Orchestrator base URL
-        poll_interval: Seconds between status polls
+        poll_interval: Deprecated. Kept for backward compatibility.
         turn_timeout: Optional timeout per turn in seconds
         interactive: Whether to pause for human operator input between iterations
+        temperature: LLM sampling temperature
+        personality: Optional Personality instance for character voice
     """
-    last_turn = None
     last_game_id = None
 
     try:
-        while True:
-            status = get_status(base_url)
-
-            if not status or not status.get("connected"):
-                time.sleep(poll_interval)
+        while True:  # reconnect loop
+            if not check_health(base_url):
+                print("Waiting for orchestrator...")
+                time.sleep(2)
                 continue
 
-            current_turn = status.get("turn")
-            current_game_id = status.get("game_id")
-
-            # Check for new game
-            if current_game_id is not None and last_game_id is not None and current_game_id != last_game_id:
-                print(f"\n{'='*50}")
-                print(f"🎮 NEW GAME DETECTED (game_id: {last_game_id} → {current_game_id})")
-                print(f"{'='*50}")
-                last_turn = None
-
-            if current_game_id is not None:
-                last_game_id = current_game_id
-
-            # Skip if no new turn
-            if current_turn is None or current_turn == last_turn:
-                time.sleep(poll_interval)
+            print("Connecting to event stream...")
+            try:
+                resp = requests.get(
+                    f"{base_url}/events",
+                    stream=True,
+                    timeout=(10, None),  # (connect_timeout, read_timeout=None -> no timeout)
+                )
+                resp.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                print(f"SSE connect failed: {e}. Retrying in 2s...")
+                time.sleep(2)
                 continue
 
-            # New turn!
-            print(f"\n{'='*50}")
-            print(f"TURN {current_turn} (game_id: {current_game_id})")
-            print(f"{'='*50}")
+            print("Subscribed. Waiting for turns.")
+            event_type = None
 
-            if _message_logger:
-                _message_logger.set_turn(current_turn, current_game_id)
+            try:
+                for raw in resp.iter_lines(chunk_size=1):
+                    line = raw.decode() if isinstance(raw, bytes) else raw
+                    if not line:
+                        # Blank line = end of one SSE event block; reset event type
+                        event_type = None
+                        continue
+                    if line.startswith(":"):
+                        continue  # keepalive comment, ignore
+                    if line.startswith("event:"):
+                        event_type = line[6:].strip()
+                    elif line.startswith("data:") and event_type == "turn_start":
+                        try:
+                            event = json.loads(line[5:].strip())
+                        except json.JSONDecodeError:
+                            continue
 
-            # Get player/civ info for narrative context
-            player_name = status.get("player_name")
-            # civ_name would come from game start info - not always in status
-            # For now, use player_name as civ identifier
+                        current_turn = event.get("turn")
+                        current_game_id = event.get("game_id")
+                        player_name = event.get("player_name")
 
-            result = run_turn(
-                model,
-                base_url,
-                current_turn,
-                game_id=current_game_id,
-                player_name=player_name,
-                timeout=turn_timeout,
-                interactive=interactive,
-            )
+                        if last_game_id is not None and current_game_id != last_game_id:
+                            print(f"\nNEW GAME ({last_game_id} -> {current_game_id})")
+                        last_game_id = current_game_id
 
-            print(f"\nSummary: {result['iterations']} iterations, {result['tool_calls']} tool calls")
+                        if _message_logger:
+                            _message_logger.set_turn(current_turn, current_game_id)
 
-            last_turn = current_turn
-            time.sleep(0.5)
+                        print(f"\n{'='*50}\nTURN {current_turn} (game_id: {current_game_id})\n{'='*50}")
+                        result = run_turn(
+                            model,
+                            base_url,
+                            current_turn,
+                            game_id=current_game_id,
+                            player_name=player_name,
+                            timeout=turn_timeout,
+                            interactive=interactive,
+                            temperature=temperature,
+                            personality=personality,
+                        )
+                        print(f"\nSummary: {result['iterations']} iterations, {result['tool_calls']} tool calls")
+
+            except KeyboardInterrupt:
+                raise
+            except requests.exceptions.RequestException as e:
+                print(f"SSE stream lost: {e}. Reconnecting in 2s...")
+                time.sleep(2)
 
     except KeyboardInterrupt:
         print("\nInterrupted")
@@ -497,6 +530,11 @@ def main():
     if args.interactive:
         interactive = True
 
+    agent_cfg = cfg.get("agent", {})
+    temperature = agent_cfg.get("temperature", 0.7)
+    personality_name = agent_cfg.get("personality")
+    personality = get_personality(personality_name) if personality_name else None
+
     # Wait for orchestrator
     print(f"Connecting to {base_url}", end="", flush=True)
     while not check_health(base_url):
@@ -505,7 +543,10 @@ def main():
     print("  Connected!")
 
     print(f"Interactive: {interactive}")
-    run_game_loop(model, base_url, poll_interval, turn_timeout, interactive)
+    print(f"Temperature: {temperature}")
+    if personality:
+        print(f"Personality: {personality_name}")
+    run_game_loop(model, base_url, poll_interval, turn_timeout, interactive, temperature=temperature, personality=personality)
 
 
 if __name__ == "__main__":
