@@ -21,7 +21,6 @@ from .message_logger import get_message_logger
 
 if TYPE_CHECKING:
     from .event_broadcaster import EventBroadcaster
-    from .game_state import GameState
 
 logger = logging.getLogger(__name__)
 
@@ -214,22 +213,29 @@ class NamedPipeServer:
     def __init__(
         self,
         pipe_name: str,
-        game_state: Optional["GameState"] = None,
         broadcaster: Optional["EventBroadcaster"] = None,
     ):
         """Initialize the pipe server.
 
         Args:
             pipe_name: Full pipe path (e.g., r"\\\\.\\pipe\\civv_llm")
-            game_state: GameState instance to update from messages
             broadcaster: Optional EventBroadcaster for SSE push events.
         """
         if not pipe_name.startswith("\\\\.\\pipe\\"):
             raise ValueError("pipe_name must start with \\\\.\\pipe\\")
 
         self.pipe_name = pipe_name
-        self._game_state = game_state
         self._broadcaster = broadcaster
+
+        # Game metadata — updated from DLL messages
+        self._state_lock = threading.Lock()
+        self._turn_number: Optional[int] = None
+        self._game_id: Optional[int] = None
+        self._player_id: Optional[int] = None
+        self._player_name: Optional[str] = None
+        self._connected: bool = False
+
+        get_message_logger().set_pipe_server(self)
         self._running = False
         self._handle: Optional[int] = None
         self._pipe_conn: Optional[PipeConnection] = None
@@ -239,13 +245,83 @@ class NamedPipeServer:
         self._message_queue: queue.Queue[dict[str, Any]] = queue.Queue()
         self._worker_thread: Optional[threading.Thread] = None
 
-        # Validation state (for detecting issues)
-        self._last_turn: Optional[int] = None
-        self._last_game_id: Optional[int] = None
+    # --- Game state (metadata from DLL messages) ---
 
-        # Connect logger to game state
-        if game_state:
-            get_message_logger().set_game_state(game_state)
+    def _update_state(self, message: dict[str, Any]) -> None:
+        """Update game metadata from a DLL message."""
+        with self._state_lock:
+            if not self._connected:
+                self._connected = True
+                logger.info("Game connection established")
+            if "turn" in message:
+                new_turn = message["turn"]
+                if self._turn_number != new_turn:
+                    logger.debug(f"Turn: {self._turn_number} → {new_turn}")
+                    # Warn on rewind
+                    if self._turn_number is not None and new_turn < self._turn_number:
+                        logger.warning(f"Turn rewind detected: {self._turn_number} → {new_turn}")
+                    self._turn_number = new_turn
+            if "game_id" in message:
+                new_game_id = message["game_id"]
+                if self._game_id != new_game_id:
+                    if self._game_id is not None:
+                        logger.info(f"Game ID changed: {self._game_id} → {new_game_id} (new game?)")
+                        self._reset_state_locked()
+                    else:
+                        logger.debug(f"Game ID: {self._game_id} → {new_game_id}")
+                    self._game_id = new_game_id
+            if "player_id" in message:
+                new_player_id = message["player_id"]
+                if self._player_id != new_player_id:
+                    logger.debug(f"Player ID: {self._player_id} → {new_player_id}")
+                    self._player_id = new_player_id
+            if "player_name" in message:
+                new_player_name = message["player_name"]
+                if self._player_name != new_player_name:
+                    logger.debug(f"Player: {self._player_name} → {new_player_name}")
+                    self._player_name = new_player_name
+
+    def _reset_state_locked(self) -> None:
+        """Reset state fields — must be called with _state_lock held."""
+        self._turn_number = None
+        self._game_id = None
+        self._player_id = None
+        self._player_name = None
+        self._connected = False
+        logger.info("Game state reset")
+
+    def _reset_state(self) -> None:
+        """Reset state (on disconnect or new game)."""
+        with self._state_lock:
+            self._reset_state_locked()
+
+    def get_metadata(self) -> dict[str, Any]:
+        """Return current game metadata."""
+        with self._state_lock:
+            return {
+                "turn_number": self._turn_number,
+                "game_id": self._game_id,
+                "player_id": self._player_id,
+                "player_name": self._player_name,
+                "connected": self._connected,
+            }
+
+    @property
+    def turn_number(self) -> Optional[int]:
+        with self._state_lock:
+            return self._turn_number
+
+    @property
+    def game_id(self) -> Optional[int]:
+        with self._state_lock:
+            return self._game_id
+
+    @property
+    def player_id(self) -> Optional[int]:
+        with self._state_lock:
+            return self._player_id
+
+    # --- Lifecycle ---
 
     def start(self) -> None:
         """Start the pipe server (blocking)."""
@@ -319,8 +395,7 @@ class NamedPipeServer:
         """Process an incoming DLL message.
 
         - Logs to JSONL (except heartbeats)
-        - Updates GameState
-        - Validates for anomalies
+        - Updates game metadata
         """
         msg_type = message.get("type", "unknown")
 
@@ -328,13 +403,9 @@ class NamedPipeServer:
         if msg_type != "heartbeat":
             get_message_logger().log(message, direction="incoming")
 
-        # Update game state
-        if msg_type in ("turn_start", "heartbeat") and self._game_state:
-            self._game_state.update_from_message(message)
-
-        # Validate turn_start messages
-        if msg_type == "turn_start":
-            self._validate_turn(message)
+        # Update game metadata from DLL messages
+        if msg_type in ("turn_start", "heartbeat"):
+            self._update_state(message)
 
         # Emit turn_start event to SSE subscribers
         if msg_type == "turn_start" and self._broadcaster:
@@ -344,27 +415,6 @@ class NamedPipeServer:
                 "player_id":   message.get("player_id"),
                 "player_name": message.get("player_name"),
             })
-
-    def _validate_turn(self, message: dict[str, Any]) -> None:
-        """Check for turn rewind or game_id change (warns only)."""
-        new_turn = message.get("turn")
-        new_game_id = message.get("game_id")
-
-        # Check for turn rewind
-        if self._last_turn is not None and new_turn is not None:
-            if new_turn < self._last_turn:
-                logger.warning(f"Turn rewind detected: {self._last_turn} → {new_turn}")
-
-        # Check for game ID change (indicates new game)
-        if self._last_game_id is not None and new_game_id is not None:
-            if new_game_id != self._last_game_id:
-                logger.info(f"Game ID changed: {self._last_game_id} → {new_game_id} (new game?)")
-                # Reset game state on new game
-                if self._game_state:
-                    self._game_state.reset()
-
-        self._last_turn = new_turn
-        self._last_game_id = new_game_id
 
     def _serve_loop(self) -> None:
         """Main server loop: create pipe, wait for client, handle messages."""
@@ -419,9 +469,7 @@ class NamedPipeServer:
         self._pipe_conn = None
         self._connection_ready.clear()
 
-        # Reset game state when pipe disconnects
-        if self._game_state:
-            self._game_state.reset()
+        self._reset_state()
 
         # Notify SSE subscribers that DLL disconnected
         if self._broadcaster:

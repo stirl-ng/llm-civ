@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 
 
 if TYPE_CHECKING:
-    from .game_state import GameState
+    from .pipe_server import NamedPipeServer
 
 
 
@@ -48,18 +48,18 @@ class CivMCPServer:
     """
 
     def __init__(
-        self, 
+        self,
         send_request: Optional[Callable[[dict[str, Any], float], dict[str, Any]]] = None,
-        game_state: Optional["GameState"] = None
+        pipe_server: Optional["NamedPipeServer"] = None,
     ):
         """Initialize the MCP server.
 
         Args:
             send_request: Callback to send requests to DLL: (request, timeout) -> response
-            game_state: GameState instance to read metadata from (single source of truth)
+            pipe_server: NamedPipeServer instance to read game metadata from
         """
         self._send_request = send_request
-        self.game_state = game_state
+        self.pipe_server = pipe_server
         self._lock = threading.Lock()
 
         self.uptime = time.monotonic()
@@ -106,23 +106,29 @@ class CivMCPServer:
     @property
     def turn_number(self) -> Optional[int]:
         """Get the current turn number."""
-        if self.game_state:
-            return self.game_state.turn_number
+        if self.pipe_server:
+            return self.pipe_server.turn_number
         return None
 
     @property
     def current_game_id(self) -> Optional[int]:
         """Get the current game ID (persists across saves)."""
-        if self.game_state:
-            return self.game_state.game_id
+        if self.pipe_server:
+            return self.pipe_server.game_id
         return None
 
     @property
     def current_player_id(self) -> Optional[int]:
         """Get the current player ID."""
-        if self.game_state:
-            return self.game_state.player_id
+        if self.pipe_server:
+            return self.pipe_server.player_id
         return None
+
+    def get_metadata(self) -> dict[str, Any]:
+        """Return current game metadata (for HTTP status endpoint)."""
+        if self.pipe_server:
+            return self.pipe_server.get_metadata()
+        return {"connected": False, "turn_number": None, "game_id": None, "player_id": None, "player_name": None}
 
     # -------------------------------------------------------------------------
     # Helper methods for tool implementations

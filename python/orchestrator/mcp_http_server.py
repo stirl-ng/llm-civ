@@ -55,25 +55,14 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
             self._send_json({"status": "ok", "server": "civ5-mcp"})
 
         elif self.path == "/status":
-            # Return game status for experiments.run module
-            # print(self.mcp_server.game_state.get_metadata())
-            if self.mcp_server and self.mcp_server.game_state:
-                metadata = self.mcp_server.game_state.get_metadata()
-                self._send_json({
-                    "connected": metadata.get("connected", False),
-                    "turn": metadata.get("turn_number"),
-                    "game_id": metadata.get("game_id"),
-                    "player_id": metadata.get("player_id"),
-                    "player_name": metadata.get("player_name"),
-                })
-            else:
-                self._send_json({
-                    "connected": False,
-                    "turn": None,
-                    "game_id": None,
-                    "player_id": None,
-                    "player_name": None,
-                })
+            metadata = self.mcp_server.get_metadata() if self.mcp_server else {}
+            self._send_json({
+                "connected": metadata.get("connected", False),
+                "turn": metadata.get("turn_number"),
+                "game_id": metadata.get("game_id"),
+                "player_id": metadata.get("player_id"),
+                "player_name": metadata.get("player_name"),
+            })
 
         elif self.path == "/about":
             about = self.mcp_server.get_about()

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from uuid import uuid4
 
 if TYPE_CHECKING:
-    from .game_state import GameState
+    from .pipe_server import NamedPipeServer
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ class MessageLogger:
 
         self.log_dir = Path(log_dir)
         self._lock = threading.Lock()
-        self._game_state: Optional["GameState"] = None
+        self._pipe_server: Optional["NamedPipeServer"] = None
 
         # Manual overrides for when GameState isn't available (e.g., run.py)
         self._manual_turn: Optional[int] = None
@@ -77,14 +77,10 @@ class MessageLogger:
         # Ensure directory exists
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
-    def set_game_state(self, game_state: Optional["GameState"]) -> None:
-        """Set GameState reference for automatic metadata injection.
-
-        Args:
-            game_state: GameState instance, or None to clear
-        """
+    def set_pipe_server(self, pipe_server: Optional["NamedPipeServer"]) -> None:
+        """Set pipe server reference for automatic metadata injection."""
         with self._lock:
-            self._game_state = game_state
+            self._pipe_server = pipe_server
 
     def set_turn(self, turn: Optional[int], game_id: Optional[int] = None) -> None:
         """Manually set turn/game_id (for use when GameState isn't available).
@@ -135,14 +131,13 @@ class MessageLogger:
         logger.info(f"Switched to log file: {log_file.name}")
 
     def _get_game_metadata(self) -> dict[str, Any]:
-        """Get current game metadata from GameState or manual overrides."""
-        # Try GameState first
-        if self._game_state is not None:
+        """Get current game metadata from pipe server or manual overrides."""
+        if self._pipe_server is not None:
             try:
                 return {
-                    "turn": self._game_state.turn_number,
-                    "game_id": self._game_state.game_id,
-                    "player_id": self._game_state.player_id,
+                    "turn": self._pipe_server.turn_number,
+                    "game_id": self._pipe_server.game_id,
+                    "player_id": self._pipe_server.player_id,
                 }
             except AttributeError:
                 pass

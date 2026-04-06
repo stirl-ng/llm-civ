@@ -15,7 +15,6 @@ from .logging_setup import setup_logging
 from .mcp_http_server import MCPHTTPServer
 from .mcp_server import CivMCPServer
 from .pipe_server import NamedPipeServer
-from .game_state import GameState
 
 
 DEFAULT_PIPE = r"\\.\pipe\civv_llm"
@@ -29,29 +28,24 @@ def run_mcp_mode(
     """Run the orchestrator in MCP mode.
 
     Creates:
-    - GameState: Single source of truth for game metadata
-    - NamedPipeServer: Handles pipe connection, message processing, logging
+    - NamedPipeServer: Handles pipe connection, message processing, logging, game metadata
     - CivMCPServer: Tool executor for LLM actions
     - MCPHTTPServer: HTTP wrapper for CivMCPServer
     """
-    # Create GameState instance (single source of truth for metadata)
-    game_state = GameState()
-
     # Create broadcaster for SSE push events
     broadcaster = EventBroadcaster()
 
-    # Create pipe server (manages pipe connection, message processing, logging)
-    # Pass game_state so it can update metadata from DLL messages
-    pipe_server = NamedPipeServer(pipe_path, game_state=game_state, broadcaster=broadcaster)
+    # Create pipe server (manages pipe connection, message processing, game metadata)
+    pipe_server = NamedPipeServer(pipe_path, broadcaster=broadcaster)
 
-    # Create the MCP server with send_request callback and game_state
+    # Create the MCP server with send_request callback and pipe_server for metadata
     def send_request(request: dict, timeout: float) -> dict:
         """Send a request to the DLL via the pipe server."""
         return pipe_server.send_request(request, timeout)
 
     mcp_server = CivMCPServer(
         send_request=send_request,
-        game_state=game_state
+        pipe_server=pipe_server,
     )
 
     # Start pipe server in background thread
