@@ -16,7 +16,7 @@ Civ V DLL (C++) ──named pipe──> Orchestrator (Python) ──HTTP :8765�
 
 - **DLL**: Sends game events, handles commands. `GameStatePipe.cpp` owns the pipe; `CvGame.cpp` owns command handling and `HandlePipeCommand()`.
 - **Orchestrator**: Named pipe client + MCP HTTP server. Exposes game tools at `localhost:8765`.
-- **Agent Runner**: Subscribes to orchestrator SSE stream (target; currently polls `/status`), receives `turn_start` for its `player_id`, sends system prompt + briefing to LLM, executes tool calls until `end_turn` succeeds. Entry: `python/experiments/run.py`.
+- **Agent Runner**: Subscribes to orchestrator SSE stream, receives `turn_start` for its `player_id`, sends system prompt + briefing to LLM, executes tool calls until `end_turn` succeeds. Entry: `python -m agent_runtime` (`python/agent_runtime/runner.py`).
 - **Journal tools** (`record_lesson`, `get_recaps`, etc.) are handled locally inside the agent runner process, not routed through the orchestrator.
 - **Multi-agent**: Multiple runners connect simultaneously, each scoped to a `player_id`. Hotseat (sequential turns) works today; simultaneous multiplayer requires concurrent per-player event streams and live fog-of-war event routing.
 
@@ -29,7 +29,7 @@ Civ V DLL (C++) ──named pipe──> Orchestrator (Python) ──HTTP :8765�
 | Orchestrator | `python/orchestrator/` |
 | Tool definitions | `python/orchestrator/mcp_server.py` (`_TOOLS` dict) |
 | Tool schemas (LLM-facing) | `python/agent_runtime/tools/schemas.py` |
-| Agent turn loop | `python/experiments/run.py` |
+| Agent turn loop | `python/agent_runtime/runner.py` |
 | System prompt | `python/agent_runtime/prompts/system_prompt.py` |
 | Turn briefing | `python/agent_runtime/briefing.py` |
 | Memory / journal | `python/agent_runtime/memory/journal.py` |
@@ -48,7 +48,7 @@ Civ V DLL (C++) ──named pipe──> Orchestrator (Python) ──HTTP :8765�
 
 - `game_id` = `CvPreGame::mapRandomSeed()` — not sequential, changes each new game load.
 - `session_id` is a pipe-connection counter, auto-injected by orchestrator into requests, never exposed to the LLM. C++ includes it in messages for routing; ignore it at the game logic level.
-- The `interactive` flag in `run.py` blocks on stdin — incompatible with unsupervised mode. Keep it `false` in configs for actual runs.
+- The `interactive` flag in `runner.py` blocks on stdin — incompatible with unsupervised mode. Keep it `false` in configs for actual runs.
 - Model name normalization for journal scoping lives implicitly in `journal.py::set_current_player()`. No documented convention yet.
 
 ## Documentation
