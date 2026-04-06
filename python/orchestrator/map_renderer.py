@@ -1,145 +1,126 @@
+"""Triple-char hex offset ASCII map renderer for LLM spatial awareness.
+
+Converts tile/unit/city data into an ASCII map using 3-char cells with hex-correct
+row offset, giving the LLM accurate spatial relationships for Civ V's hex grid.
+
+Format example (triple-char offset, format G):
+    GRS  ~~~  PLN  ^^^  DST
+      ~~~  nGR  [C]  PLN  ~~~
+    GRS  ~~~  PLN  IRO  /M\\
+      ~~~  GRS  PLN  [W]  MNT
+
+Coordinate system: Civ V uses odd-r offset coords.
+    xToHexspaceX(x, y) = x - (y >> 1)
+Odd y-rows are visually offset right by 0.5 cells → 2-space indent in ASCII.
 """
-ASCII Map Renderer for LLM Spatial Awareness
 
-Converts tile data from the game into ASCII maps that give the LLM
-spatial awareness similar to what human players see.
-"""
+from typing import Dict, List, Optional, Tuple
 
-from typing import Dict, List, Tuple, Optional
-
-# Terrain type constants (from Civ V)
-TERRAIN_GRASS = 0
-TERRAIN_PLAINS = 1
-TERRAIN_DESERT = 2
-TERRAIN_TUNDRA = 4
-TERRAIN_SNOW = 5
-
-# Feature type constants
-FEATURE_NONE = -1
-FEATURE_FOREST = 0
-FEATURE_JUNGLE = 1
-FEATURE_MARSH = 6
-FEATURE_ICE = 3
-
-# Plot type constants
-PLOT_OCEAN = 0
-PLOT_LAND = 1
-PLOT_HILLS = 2
-PLOT_MOUNTAIN = 3
+from .map_legend import (
+    CITY_SYMBOL_NAMES,
+    CITY_SYMBOLS,
+    FEATURE_PREFIX,
+    FEATURE_PREFIX_NAMES,
+    FEATURE_SOLO,
+    FOG,
+    PLOT_ABBREVS,
+    TERRAIN_ABBREVS,
+    UNIT_SYMBOL_NAMES,
+    UNIT_SYMBOLS,
+    generate_legend_text,
+    name_to_abbrev,
+)
 
 
-def terrain_to_symbol(tile: Dict) -> str:
+def _to_display_x(x: int, y: int) -> int:
+    """Convert Civ V storage x to hex-space display column.
+
+    Implements xToHexspaceX from CvGameCoreUtils.h:
+        display_x = x - (y >> 1)
     """
-    Convert tile data to ASCII symbol.
+    return x - (y >> 1)
 
-    Priority:
-    1. Unexplored (?)
-    2. Mountains (M)
-    3. Water (~)
-    4. Features (n=forest, N=jungle, #=marsh, i=ice)
-    5. Hills (^)
-    6. Terrain type (., :, d, t, s)
+
+def _tile_cell(tile: Dict, abbrev_registry: dict, seen: dict) -> str:
+    """Derive the 3-char cell string for a single tile.
+
+    Priority (highest first):
+      1. Unrevealed fog
+      2. Mountain
+      3. Ocean/water
+      4. Ice feature (standalone)
+      5. Hills
+      6. Resource (if visible)
+      7. Improvement
+      8. Feature+terrain (forest/jungle/marsh prefix)
+      9. Base terrain
     """
-    # Check if revealed
-    if not tile.get("is_revealed", False):
-        return "?"
+    if not tile.get("is_revealed", True):
+        seen.setdefault(FOG, "Unexplored")
+        return FOG
 
-    # Mountains (impassable)
-    if tile.get("is_mountain", False):
-        return "M"
+    plot_type = tile.get("plot_type", 1)
+    is_water = tile.get("is_water", False)
+    is_mountain = tile.get("is_mountain", False)
+    is_hills = tile.get("is_hills", False)
+    feature_type = tile.get("feature_type", -1)
+    terrain_type = tile.get("terrain_type", 0)
+    is_visible = tile.get("is_visible", True)
 
-    # Water
-    if tile.get("is_water", False):
-        return "~"
+    # Mountain
+    if is_mountain or plot_type == 3:
+        sym, desc = PLOT_ABBREVS[3]
+        seen.setdefault(sym, desc)
+        return sym
 
-    # Features (take precedence over terrain)
-    feature_type = tile.get("feature_type", FEATURE_NONE)
-    if feature_type == FEATURE_FOREST:
-        return "n"  # forest (tree)
-    elif feature_type == FEATURE_JUNGLE:
-        return "N"  # jungle (dense tree)
-    elif feature_type == FEATURE_MARSH:
-        return "#"  # marsh (hashtag suggests difficult terrain)
-    elif feature_type == FEATURE_ICE:
-        return "i"  # ice
+    # Ocean / coastal water
+    if is_water or plot_type == 0:
+        sym, desc = PLOT_ABBREVS[0]
+        seen.setdefault(sym, desc)
+        return sym
 
-    # Hills
-    if tile.get("is_hills", False):
-        return "^"  # hills (caret = elevated)
+    # Ice (standalone feature — no terrain prefix makes sense)
+    if feature_type in FEATURE_SOLO:
+        sym, desc = FEATURE_SOLO[feature_type]
+        seen.setdefault(sym, desc)
+        return sym
 
-    # Base terrain
-    terrain_type = tile.get("terrain_type", TERRAIN_GRASS)
-    if terrain_type == TERRAIN_GRASS:
-        return "."  # grassland (fertile)
-    elif terrain_type == TERRAIN_PLAINS:
-        return ":"  # plains (similar but less dense)
-    elif terrain_type == TERRAIN_DESERT:
-        return "d"  # desert
-    elif terrain_type == TERRAIN_TUNDRA:
-        return "t"  # tundra (cold)
-    elif terrain_type == TERRAIN_SNOW:
-        return "s"  # snow (very cold)
+    # Hills (plot type 2)
+    if is_hills or plot_type == 2:
+        sym, desc = PLOT_ABBREVS[2]
+        seen.setdefault(sym, desc)
+        return sym
 
-    return "?"  # Unknown
-
-
-def resource_to_symbol(tile: Dict) -> str:
-    """Convert tile with resource to symbol."""
-    # Only show if resource is present
-    if tile.get("resource_type") is not None and tile.get("is_visible", False):
-        # Could differentiate luxury vs strategic in the future
-        # For now, use single symbol
-        return "*"
-    return None
-
-
-def improvement_to_symbol(tile: Dict) -> str:
-    """Convert tile with improvement/route to symbol."""
-    # Route takes precedence
-    route_type = tile.get("route_type")
-    if route_type is not None and route_type != -1:
-        if route_type == 1:  # Railroad
-            return "="
-        else:  # Road (type 0)
-            return "R"
+    # Resource (only when visible — not just revealed)
+    if is_visible and tile.get("resource_type") is not None:
+        rname = tile.get("resource_name") or f"Resource{tile['resource_type']}"
+        sym = name_to_abbrev(rname, abbrev_registry)
+        seen.setdefault(sym, rname)
+        return sym
 
     # Improvement
-    improvement_type = tile.get("improvement_type")
-    if improvement_type is not None and improvement_type != -1:
-        # Generic improvement symbol
-        return "+"
+    if tile.get("improvement_type") is not None and tile.get("improvement_type") != -1:
+        iname = tile.get("improvement_name") or f"Imp{tile['improvement_type']}"
+        sym = name_to_abbrev(iname, abbrev_registry)
+        seen.setdefault(sym, iname)
+        return sym
 
-    return None
+    # Feature + terrain prefix (forest/jungle/marsh)
+    if feature_type in FEATURE_PREFIX:
+        prefix = FEATURE_PREFIX[feature_type]
+        fname = FEATURE_PREFIX_NAMES[feature_type]
+        terrain_abbrev, terrain_name = TERRAIN_ABBREVS.get(terrain_type, ("GRS", "Grassland"))
+        sym = prefix + terrain_abbrev[:2]
+        seen.setdefault(sym, f"{fname} {terrain_name}")
+        return sym
 
+    # Base terrain
+    if terrain_type in TERRAIN_ABBREVS:
+        sym, desc = TERRAIN_ABBREVS[terrain_type]
+        seen.setdefault(sym, desc)
+        return sym
 
-def unit_to_symbol(unit: Dict) -> str:
-    """Convert unit data to symbol."""
-    unit_type = unit.get("unit_type_name", "").lower()
-
-    # Settlers
-    if "settler" in unit_type or "colonist" in unit_type:
-        return "S"
-
-    # Workers/builders
-    if "worker" in unit_type or "builder" in unit_type:
-        return "W"
-
-    # Civilian (catch-all)
-    if not unit.get("is_combat_unit", True):
-        return "w"  # lowercase for other civilians
-
-    # Military units (generic)
-    return "U"
-
-
-def city_to_symbol(city: Dict, is_capital: bool, is_ours: bool) -> str:
-    """Convert city data to symbol."""
-    if is_capital and is_ours:
-        return "@"  # Our capital
-    elif is_ours:
-        return "C"  # Our city
-    else:
-        return "c"  # Enemy/other civ city
+    return "   "
 
 
 def render_map(
@@ -149,44 +130,38 @@ def render_map(
     center: Tuple[int, int] = None,
     radius: int = 10,
     layers: List[str] = None,
-    show_fog: bool = True,
-    show_grid: bool = True
-) -> str:
-    """
-    Render ASCII map from tile/unit/city data.
+) -> Tuple[str, Dict[str, str]]:
+    """Render triple-char hex offset ASCII map.
 
     Args:
-        tiles: List of tile dicts from get_visible_tiles
-        units: List of unit dicts (optional)
-        cities: List of city dicts (optional)
-        center: (x, y) tuple for map center
+        tiles: Tile dicts from get_visible_tiles
+        units: Unit dicts (optional)
+        cities: City dicts (optional)
+        center: (x, y) storage coordinates for viewport center
         radius: Tiles from center to edge
-        layers: Which layers to show (terrain, resources, improvements, units, cities)
-        show_fog: Show fog-of-war tiles as '?'
-        show_grid: Show coordinate grid
+        layers: Which layers to render (default: all)
 
     Returns:
-        ASCII map string
+        (grid_str, seen) — grid string and symbol→description dict for legend
     """
     if layers is None:
         layers = ["terrain", "resources", "improvements", "units", "cities"]
-
     if units is None:
         units = []
-
     if cities is None:
         cities = []
 
-    # Create grid indexed by (x, y)
-    grid = {}
+    # Build display grid indexed by (display_x, y)
+    display_grid: dict[tuple[int, int], str] = {}
+    abbrev_registry: dict[str, str] = {}  # abbrev → name, for collision resolution
+    seen: dict[str, str] = {}             # symbol → description, for legend
 
-    # Determine bounds
+    # Determine viewport bounds in storage coords
     if center is None:
-        # Use all tiles if no center specified
         xs = [t["x"] for t in tiles]
         ys = [t["y"] for t in tiles]
-        if not xs or not ys:
-            return "No tiles to display"
+        if not xs:
+            return ("No tiles to display", {})
         x_min, x_max = min(xs), max(xs)
         y_min, y_max = min(ys), max(ys)
     else:
@@ -200,92 +175,90 @@ def render_map(
         for tile in tiles:
             x, y = tile["x"], tile["y"]
             if x_min <= x <= x_max and y_min <= y <= y_max:
-                grid[(x, y)] = terrain_to_symbol(tile)
+                dx = _to_display_x(x, y)
+                display_grid[(dx, y)] = _tile_cell(tile, abbrev_registry, seen)
 
     # Layer 2: Improvements (overlays terrain)
     if "improvements" in layers:
         for tile in tiles:
             x, y = tile["x"], tile["y"]
             if x_min <= x <= x_max and y_min <= y <= y_max:
-                symbol = improvement_to_symbol(tile)
-                if symbol:
-                    grid[(x, y)] = symbol
+                if tile.get("improvement_type") is not None and tile.get("improvement_type") != -1:
+                    iname = tile.get("improvement_name") or f"Imp{tile['improvement_type']}"
+                    sym = name_to_abbrev(iname, abbrev_registry)
+                    seen.setdefault(sym, iname)
+                    dx = _to_display_x(x, y)
+                    display_grid[(dx, y)] = sym
+
+                route = tile.get("route_type")
+                if route is not None and route != -1:
+                    sym = "===" if route == 1 else "-R-"
+                    seen.setdefault(sym, "Railroad" if route == 1 else "Road")
+                    dx = _to_display_x(x, y)
+                    display_grid[(dx, y)] = sym
 
     # Layer 3: Resources (overlays improvements)
     if "resources" in layers:
         for tile in tiles:
             x, y = tile["x"], tile["y"]
             if x_min <= x <= x_max and y_min <= y <= y_max:
-                symbol = resource_to_symbol(tile)
-                if symbol:
-                    grid[(x, y)] = symbol
+                if tile.get("is_visible", True) and tile.get("resource_type") is not None:
+                    rname = tile.get("resource_name") or f"Resource{tile['resource_type']}"
+                    sym = name_to_abbrev(rname, abbrev_registry)
+                    seen.setdefault(sym, rname)
+                    dx = _to_display_x(x, y)
+                    display_grid[(dx, y)] = sym
 
     # Layer 4: Cities (high priority)
     if "cities" in layers:
         for city in cities:
             x, y = city["x"], city["y"]
             if x_min <= x <= x_max and y_min <= y <= y_max:
-                is_capital = city.get("is_capital", False)
-                is_ours = city.get("is_ours", False)
-                grid[(x, y)] = city_to_symbol(city, is_capital, is_ours)
+                if city.get("is_capital") and city.get("is_ours"):
+                    sym = CITY_SYMBOLS["capital"]
+                elif city.get("is_ours"):
+                    sym = CITY_SYMBOLS["ours"]
+                else:
+                    sym = CITY_SYMBOLS["other"]
+                seen.setdefault(sym, CITY_SYMBOL_NAMES[sym])
+                dx = _to_display_x(x, y)
+                display_grid[(dx, y)] = sym
 
     # Layer 5: Units (highest priority, except fog)
     if "units" in layers:
         for unit in units:
             x, y = unit["x"], unit["y"]
             if x_min <= x <= x_max and y_min <= y <= y_max:
-                grid[(x, y)] = unit_to_symbol(unit)
+                utype = unit.get("unit_type_name", "").lower()
+                if "settler" in utype or "colonist" in utype:
+                    role = "settler"
+                elif "worker" in utype or "builder" in utype:
+                    role = "worker"
+                elif not unit.get("is_combat_unit", True):
+                    role = "civilian"
+                else:
+                    role = "military"
+                sym = UNIT_SYMBOLS[role]
+                seen.setdefault(sym, UNIT_SYMBOL_NAMES[sym])
+                dx = _to_display_x(x, y)
+                display_grid[(dx, y)] = sym
 
-    # Render to string
+    # Compute display-space column bounds from converted coords
+    if display_grid:
+        all_dx = [k[0] for k in display_grid]
+        dx_min, dx_max = min(all_dx), max(all_dx)
+    else:
+        dx_min = _to_display_x(x_min, y_max)
+        dx_max = _to_display_x(x_max, y_min)
+
+    # Render rows
     lines = []
-
-    if show_grid:
-        # Header with column numbers
-        header = "    "  # Indent for row numbers
-        for x in range(x_min, x_max + 1):
-            header += f"{x:2d} "
-        lines.append(header)
-
-        # Top border
-        border = "   +" + "-" * ((x_max - x_min + 1) * 3) + "+"
-        lines.append(border)
-
-    # Rows
     for y in range(y_min, y_max + 1):
-        if show_grid:
-            row = f"{y:2d} |"
-        else:
-            row = ""
+        indent = "  " if (y % 2 != 0) else ""
+        cells = [display_grid.get((dx, y), "   ") for dx in range(dx_min, dx_max + 1)]
+        lines.append(indent + "  ".join(cells))
 
-        for x in range(x_min, x_max + 1):
-            symbol = grid.get((x, y), "?" if show_fog else " ")
-            if show_grid:
-                row += f" {symbol} "
-            else:
-                row += symbol
-
-        if show_grid:
-            row += "|"
-        lines.append(row)
-
-    if show_grid:
-        # Bottom border
-        lines.append(border)
-
-    return "\n".join(lines)
-
-
-def generate_legend() -> str:
-    """Generate legend explaining symbols."""
-    return """Legend:
-  @=Your capital  C=Your city  c=Other city
-  U=Military unit  S=Settler  W=Worker
-  *=Resource  +=Improvement  R=Road  ==Railroad
-  .=Grass  :=Plains  d=Desert  t=Tundra  s=Snow
-  ^=Hills  M=Mountain  ~=Water
-  n=Forest  N=Jungle  #=Marsh  i=Ice
-  ?=Unexplored
-"""
+    return "\n".join(lines), seen
 
 
 def render_map_with_context(
@@ -297,28 +270,31 @@ def render_map_with_context(
     layers: List[str] = None,
     show_legend: bool = True,
     turn: int = None,
-    center_name: str = None
+    center_name: str = None,
 ) -> str:
-    """
-    Render map with contextual information (title, legend, unit list).
+    """Render map with optional header and contextual legend.
+
+    Public API — signature unchanged from prior version.
 
     Args:
-        tiles: List of tile dicts
-        units: List of unit dicts (filtered to viewport)
-        cities: List of city dicts (filtered to viewport)
-        center: (x, y) center point
-        radius: Viewport radius
-        layers: Which layers to show
-        show_legend: Include legend
-        turn: Current turn number
-        center_name: Name of center location (e.g., city name)
+        tiles: Tile dicts from get_visible_tiles
+        units: Unit dicts (optional)
+        cities: City dicts (optional)
+        center: (x, y) storage coordinates for viewport center
+        radius: Tiles from center to edge
+        layers: Which layers to render
+        show_legend: Prepend legend block
+        turn: Current turn number (for header)
+        center_name: Name of center location (for header)
 
     Returns:
-        Formatted map string with context
+        Formatted map string
     """
+    grid_str, seen = render_map(tiles, units, cities, center, radius, layers)
+
     result = []
 
-    # Title
+    # Header
     title_parts = []
     if turn is not None:
         title_parts.append(f"Turn {turn}")
@@ -326,29 +302,32 @@ def render_map_with_context(
         title_parts.append(f"Center: {center_name}")
     elif center:
         title_parts.append(f"Center: ({center[0]}, {center[1]})")
-
     if title_parts:
         result.append(" - ".join(title_parts))
         result.append("")
 
     # Legend
     if show_legend:
-        result.append(generate_legend())
+        legend = generate_legend_text(seen)
+        if legend:
+            result.append(legend)
+            result.append("")
 
     # Map
-    map_str = render_map(tiles, units, cities, center, radius, layers)
-    result.append(map_str)
+    result.append(grid_str)
     result.append("")
 
-    # Unit summary (if units in viewport)
+    # Unit summary
     if units:
         result.append("Units in view:")
         for unit in units:
             moves = unit.get("moves_remaining", 0)
             max_moves = unit.get("max_moves", 0)
-            result.append(f"  - {unit.get('unit_type_name', 'Unknown')} "
-                         f"(id={unit['id']}) at ({unit['x']}, {unit['y']}) "
-                         f"- {moves}/{max_moves} moves")
+            result.append(
+                f"  - {unit.get('unit_type_name', 'Unknown')} "
+                f"(id={unit['id']}) at ({unit['x']}, {unit['y']}) "
+                f"- {moves}/{max_moves} moves"
+            )
         result.append("")
 
     return "\n".join(result)

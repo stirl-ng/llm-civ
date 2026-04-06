@@ -421,6 +421,25 @@ TEMPLATE = """
             font-size: 18px; cursor: pointer; padding: 2px 6px; border-radius: 3px;
         }
         .modal-close:hover { background: var(--panel-alt); color: var(--text); }
+        .modal-hex-toggle {
+            font-size: 10px; padding: 3px 8px; margin-left: auto; margin-right: 8px;
+            background: var(--panel-alt); border: 1px solid var(--border);
+            border-radius: 3px; color: var(--dim); cursor: pointer; font-family: inherit;
+        }
+        .modal-hex-toggle.active { border-color: var(--blue); color: var(--blue); }
+        /* Inline map expand in tools panel */
+        .tool-map-preview {
+            display: none; margin-top: 5px; background: #09090f;
+            border: 1px solid var(--border); border-radius: 3px; padding: 8px;
+            font-size: 10px; line-height: 1.4; white-space: pre; overflow-x: auto;
+            max-height: 280px; overflow-y: auto; color: var(--dim);
+        }
+        .tool-map-preview.expanded { display: block; }
+        /* Hex border overlay in modal */
+        .hex-cell {
+            display: inline-block; border: 1px solid rgba(90,171,255,0.2);
+            border-radius: 2px; padding: 0 1px;
+        }
         .modal-body { padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 14px; }
         .modal-section-label {
             font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
@@ -607,6 +626,7 @@ TEMPLATE = """
                 <span id="modalIcon"></span>
                 <span id="modalToolName"></span>
             </div>
+            <button id="hexToggleBtn" class="modal-hex-toggle" onclick="toggleHexBorder()" style="display:none">⬡ Hex</button>
             <button class="modal-close" onclick="closeModal()">×</button>
         </div>
         <div class="modal-body">
@@ -833,11 +853,18 @@ TEMPLATE = """
                 const resCls = tool.ok ? 'ok' : 'err';
                 const resHtml = tool.result_summary
                     ? `<div class="tool-result ${resCls}">${esc(tool.result_summary)}</div>` : '';
+                const isMapTool = tool.name === 'get_map_view';
+                const mapRaw = isMapTool && tool.result && tool.result.map_raw;
+                const mapPreview = mapRaw
+                    ? `<pre class="tool-map-preview" id="map-preview-${i}">${esc(mapRaw)}</pre>` : '';
+                const clickHandler = isMapTool
+                    ? `toggleMapExpand(${i}, event)` : `openToolModal(${i})`;
                 html += `
-                    <div class="tool-item ${tool.category} ${errCls}" onclick="openToolModal(${i})">
+                    <div class="tool-item ${tool.category} ${errCls}" id="tool-item-${i}" onclick="${clickHandler}">
                         <span class="tool-icon">${tool.icon}</span>
                         <span class="tool-name">${esc(tool.name)}</span>
                         ${resHtml}
+                        ${mapPreview}
                     </div>`;
             }
             container.innerHTML = html;
@@ -891,7 +918,12 @@ TEMPLATE = """
     }
 
     // ── Modal ──
+    let _hexActive = false;
+    let _hexModalIndex = null;
+
     function openToolModal(index) {
+        _hexActive = false;
+        _hexModalIndex = index;
         const tool = toolData[index];
         if (!tool) return;
         document.getElementById('modalIcon').textContent = tool.icon;
@@ -899,15 +931,67 @@ TEMPLATE = """
         const args   = tool.arguments || {};
         const result = tool.result    || {};
         document.getElementById('modalArguments').textContent = JSON.stringify(args, null, 2);
-        if (result.map && typeof result.map === 'string') {
-            const {map, ...rest} = result;
-            let txt = '=== ASCII Map ===\n\n' + map;
-            if (Object.keys(rest).length) txt += '\n\n=== Other Data ===\n\n' + JSON.stringify(rest, null, 2);
-            document.getElementById('modalResult').textContent = txt;
+
+        const isMapTool = tool.name === 'get_map_view';
+        const hexBtn = document.getElementById('hexToggleBtn');
+        hexBtn.style.display = isMapTool ? '' : 'none';
+        hexBtn.classList.remove('active');
+
+        const pre = document.getElementById('modalResult');
+        if (isMapTool && result.map && typeof result.map === 'string') {
+            const {map, map_raw, ...rest} = result;
+            let txt = map;
+            if (Object.keys(rest).length) txt += '\n\n=== Meta ===\n\n' + JSON.stringify(rest, null, 2);
+            pre.textContent = txt;
         } else {
-            document.getElementById('modalResult').textContent = JSON.stringify(result, null, 2);
+            pre.textContent = JSON.stringify(result, null, 2);
         }
         document.getElementById('toolModal').classList.add('visible');
+    }
+
+    function toggleHexBorder() {
+        if (_hexModalIndex === null) return;
+        _hexActive = !_hexActive;
+        const btn = document.getElementById('hexToggleBtn');
+        btn.classList.toggle('active', _hexActive);
+
+        const tool = toolData[_hexModalIndex];
+        const result = tool && tool.result || {};
+        const pre = document.getElementById('modalResult');
+
+        if (_hexActive && result.map) {
+            // Wrap each 3-char cell in a hex-cell span for visual borders
+            const lines = result.map.split('\n');
+            const htmlLines = lines.map(line => {
+                // Preserve leading indent; wrap 3-char tokens separated by 2 spaces
+                const indentMatch = line.match(/^( +)/);
+                const indent = indentMatch ? indentMatch[1] : '';
+                const rest = line.slice(indent.length);
+                // Split on the 2-space separator used between cells
+                const tokens = rest.split('  ');
+                const wrapped = tokens.map(tok =>
+                    tok.trim() ? '<span class="hex-cell">' + esc(tok) + '</span>' : esc(tok)
+                ).join('  ');
+                return esc(indent) + wrapped;
+            });
+            pre.innerHTML = htmlLines.join('\n');
+        } else {
+            // Back to plain text
+            const {map, map_raw, ...rest} = result;
+            let txt = map || '';
+            if (Object.keys(rest).length) txt += '\n\n=== Meta ===\n\n' + JSON.stringify(rest, null, 2);
+            pre.textContent = txt;
+        }
+    }
+
+    function toggleMapExpand(index, event) {
+        const preview = document.getElementById('map-preview-' + index);
+        if (!preview) { openToolModal(index); return; }
+        const isExpanded = preview.classList.contains('expanded');
+        // Click on the icon area when already expanded → open full modal
+        if (isExpanded && event.target.closest('.tool-icon')) { openToolModal(index); return; }
+        preview.classList.toggle('expanded');
+        document.getElementById('tool-item-' + index).classList.toggle('map-expanded');
     }
 
     function closeModal() {

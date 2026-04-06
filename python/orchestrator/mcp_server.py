@@ -730,8 +730,6 @@ class CivMCPServer:
 
     def _get_map_view(self, args: dict[str, Any]) -> dict[str, Any]:
         """ESSENTIAL: Get ASCII map showing terrain, units, cities, resources around a location. Use this to understand the world before moving units or making decisions."""
-        from .map_renderer import render_map_with_context
-
         # Get optional parameters
         center_str = args.get("center", "capital")
         radius = args.get("radius", 10)
@@ -803,21 +801,35 @@ class CivMCPServer:
             viewport_cities = cities
 
         # Render map
-        map_str = render_map_with_context(
+        from .map_renderer import render_map
+        from .map_legend import generate_legend_text
+
+        grid_str, seen = render_map(
             tiles=tiles,
             units=viewport_units,
             cities=viewport_cities,
             center=center,
             radius=radius,
             layers=layers,
-            show_legend=show_legend,
-            turn=turn,
-            center_name=center_name
         )
+
+        # Build header
+        title_parts = []
+        if turn is not None:
+            title_parts.append(f"Turn {turn}")
+        if center_name:
+            title_parts.append(f"Center: {center_name}")
+        elif center:
+            title_parts.append(f"Center: ({center[0]}, {center[1]})")
+        header = " - ".join(title_parts) + "\n\n" if title_parts else ""
+
+        legend_str = generate_legend_text(seen) if show_legend else ""
+        map_with_legend = header + legend_str + ("\n\n" if legend_str else "") + grid_str
 
         return {
             "success": True,
-            "map": map_str,
+            "map": map_with_legend,   # legend + grid — what the LLM sees
+            "map_raw": grid_str,      # grid only — for dashboard inline display
             "center": center,
             "radius": radius,
             "turn": turn,
