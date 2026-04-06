@@ -12,6 +12,7 @@ Add ?verbose=1 to see game events and internal messages
 
 import json
 import logging
+import queue
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -21,6 +22,14 @@ from typing import Any
 import time as _time
 
 from flask import Flask, Response, render_template_string, request
+
+_broadcaster = None
+
+
+def init(broadcaster) -> None:
+    """Connect dashboard to the orchestrator's EventBroadcaster for live push updates."""
+    global _broadcaster
+    _broadcaster = broadcaster
 
 # Configure logging
 logging.basicConfig(
@@ -1960,11 +1969,11 @@ def _log_mtime(game_id=None) -> float:
 
 @app.route("/api/stream")
 def api_stream():
-    """SSE stream: push fresh data whenever log files change.
+    """SSE stream: push fresh data on each game event.
 
-    Watches log file mtime at 0.5s intervals and emits an 'update' event
-    whenever it changes. Sends keepalive comments every poll cycle to keep
-    the connection alive through proxies.
+    When run embedded in the orchestrator, subscribes to the shared EventBroadcaster
+    and pushes immediately on any event. When run standalone, falls back to watching
+    log file mtime at 0.5s intervals.
     """
     debug_mode = request.args.get("debug") == "1"
     verbose_mode = request.args.get("verbose") == "1"
@@ -1972,19 +1981,36 @@ def api_stream():
     game_id = int(game_id_str) if game_id_str else None
 
     def generate():
-        last_mtime = _log_mtime(game_id)
-        # Send initial data immediately so the page populates on connect
+        # Send initial snapshot immediately so the page populates on connect
         data = parse_logs(debug_mode=debug_mode, verbose_mode=verbose_mode, game_id=game_id)
         yield f"event: update\ndata: {json.dumps(data)}\n\n"
-        while True:
-            _time.sleep(0.5)
-            mtime = _log_mtime(game_id)
-            if mtime != last_mtime:
-                last_mtime = mtime
-                data = parse_logs(debug_mode=debug_mode, verbose_mode=verbose_mode, game_id=game_id)
-                yield f"event: update\ndata: {json.dumps(data)}\n\n"
-            else:
-                yield ": keepalive\n\n"
+
+        if _broadcaster:
+            q = _broadcaster.subscribe()
+            try:
+                while True:
+                    try:
+                        q.get(timeout=30)
+                    except queue.Empty:
+                        yield ": keepalive\n\n"
+                        continue
+                    # Log is already flushed before broadcaster fires — parse fresh data
+                    data = parse_logs(debug_mode=debug_mode, verbose_mode=verbose_mode, game_id=game_id)
+                    yield f"event: update\ndata: {json.dumps(data)}\n\n"
+            finally:
+                _broadcaster.unsubscribe(q)
+        else:
+            # Fallback: file-mtime polling (standalone mode)
+            last_mtime = _log_mtime(game_id)
+            while True:
+                _time.sleep(0.5)
+                mtime = _log_mtime(game_id)
+                if mtime != last_mtime:
+                    last_mtime = mtime
+                    data = parse_logs(debug_mode=debug_mode, verbose_mode=verbose_mode, game_id=game_id)
+                    yield f"event: update\ndata: {json.dumps(data)}\n\n"
+                else:
+                    yield ": keepalive\n\n"
 
     return Response(
         generate(),

@@ -10,6 +10,7 @@ import os
 import sys
 from threading import Thread
 
+from .dashboard import init as init_dashboard, main as run_dashboard
 from .event_broadcaster import EventBroadcaster
 from .logging_setup import setup_logging
 from .mcp_http_server import MCPHTTPServer
@@ -34,6 +35,10 @@ def run_mcp_mode(
     """
     # Create broadcaster for SSE push events
     broadcaster = EventBroadcaster()
+
+    # Start dashboard in background thread, sharing the broadcaster for live push
+    init_dashboard(broadcaster)
+    Thread(target=run_dashboard, daemon=True).start()
 
     # Create pipe server (manages pipe connection, message processing, game metadata)
     pipe_server = NamedPipeServer(pipe_path, broadcaster=broadcaster)

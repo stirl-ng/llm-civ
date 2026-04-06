@@ -362,29 +362,8 @@ def run_turn(
                         print(f"    ⚠️  end_turn blocked: {error}")
                         # Continue loop - model will see the error and try to fix
                     else:
-                        # Wait for turn to actually advance
-                        print(f"    ⏳ Waiting for turn to advance", end="", flush=True)
-                        turn_advanced = False
-                        for _ in range(20):  # Wait up to 10 seconds
-                            print(".", end="", flush=True)
-                            time.sleep(0.5)
-                            status = get_status(base_url)
-                            if status and status.get("turn") != turn:
-                                turn_advanced = True
-                                break
-
-                        if turn_advanced:
-                            print(f"  ✓ Turn {turn} ended")
-                            return {"turn": turn, "iterations": iterations, "tool_calls": tool_calls_total, "success": True}
-                        else:
-                            print(f"    ⚠️  turn_end_ack received but turn didn't advance")
-                            messages.append({
-                                "role": "user",
-                                "content": json.dumps({
-                                    "error": "turn_not_advanced",
-                                    "message": "end_turn was acknowledged but turn didn't advance. Something may still be blocking."
-                                })
-                            })
+                        print(f"  ✓ Turn {turn} ended")
+                        return {"turn": turn, "iterations": iterations, "tool_calls": tool_calls_total, "success": True}
 
             except Exception as e:
                 print(f"    ✗ {tool_call.name}: {e}")
