@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Reminder hook: prints a note if there are uncommitted changes.
-# Does NOT commit automatically — leaves that to Claude's judgment.
+# Stage and commit any uncommitted changes at end of session.
+# Commits with a placeholder message — the Stop agent will amend it.
+cd "$(git rev-parse --show-toplevel)" || exit 1
 
-unstaged=$(git diff --name-only 2>/dev/null)
-untracked=$(git ls-files --others --exclude-standard 2>/dev/null)
-
-if [ -n "$unstaged" ] || [ -n "$untracked" ]; then
-  echo "Reminder: there are uncommitted changes. Commit if the work reached a logical stopping point."
+if [ -z "$(git status --porcelain)" ]; then
+  exit 0
 fi
 
-exit 0
+git add -A
+git commit -m "wip: session changes (message pending agent rewrite)
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"

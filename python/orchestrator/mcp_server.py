@@ -118,13 +118,6 @@ class CivMCPServer:
         return None
 
     @property
-    def current_session_id(self) -> Optional[int]:
-        """Get the current session ID (changes per pipe connection)."""
-        if self.game_state:
-            return self.game_state.session_id
-        return None
-
-    @property
     def current_player_id(self) -> Optional[int]:
         """Get the current player ID."""
         if self.game_state:
@@ -172,8 +165,6 @@ class CivMCPServer:
         with self._lock:
             if "game_id" not in request:
                 request["game_id"] = self.current_game_id
-            if "session_id" not in request:
-                request["session_id"] = self.current_session_id
             if "player_id" not in request:
                 request["player_id"] = self.current_player_id
             if "turn" not in request:
@@ -316,7 +307,6 @@ class CivMCPServer:
             "turn_number": "optional int",
             "player_id": "optional int",
             "game_id": "optional int (overrides current_game_only)",
-            "session_id": "optional int",
             "current_game_only": "optional bool (default True)",
             "limit": "optional int (default 100, max 1000)",
         }),
@@ -652,7 +642,6 @@ class CivMCPServer:
             "notifications": notifications,
             "count": len(notifications),
             "game_id": game_id,
-            "session_id": self.current_session_id,
             "player_id": self.current_player_id,
         }
 
@@ -703,7 +692,6 @@ class CivMCPServer:
         turn_number = args.get("turn_number")
         player_id = args.get("player_id")
         game_id = args.get("game_id")
-        session_id = args.get("session_id")
         current_game_only = args.get("current_game_only", True)
         limit = min(args.get("limit", 100), 1000)
 
@@ -717,7 +705,6 @@ class CivMCPServer:
             turn=turn_number,
             player_id=player_id,
             game_id=game_id,
-            session_id=session_id,
             limit=limit,
         )
 
@@ -725,7 +712,6 @@ class CivMCPServer:
             "messages": messages,
             "count": len(messages),
             "game_id": game_id,
-            "session_id": self.current_session_id,
         }
 
     def _ping(self, args: dict[str, Any]) -> dict[str, Any]:

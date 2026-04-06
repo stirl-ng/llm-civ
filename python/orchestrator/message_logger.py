@@ -44,7 +44,7 @@ class MessageLogger:
     - timestamp: ISO format
     - uuid: unique identifier
     - direction: 'incoming' or 'outgoing'
-    - Game metadata (turn, game_id, session_id) if GameState is set
+    - Game metadata (turn, game_id) if GameState is set
 
     Log files are created per-game: logs/game_{game_id}.jsonl
     """
@@ -142,7 +142,6 @@ class MessageLogger:
                 return {
                     "turn": self._game_state.turn_number,
                     "game_id": self._game_state.game_id,
-                    "session_id": self._game_state.session_id,
                     "player_id": self._game_state.player_id,
                 }
             except AttributeError:
@@ -266,7 +265,6 @@ class MessageLogger:
         direction: Optional[str] = None,
         turn: Optional[int] = None,
         game_id: Optional[int] = None,
-        session_id: Optional[int] = None,
         player_id: Optional[int] = None,
         limit: int = 100,
         since_turn: Optional[int] = None,
@@ -278,7 +276,6 @@ class MessageLogger:
             direction: Filter by direction ('incoming' or 'outgoing')
             turn: Filter by exact turn number
             game_id: Filter by game ID (uses current game if not specified)
-            session_id: Filter by session ID
             player_id: Filter by player ID
             limit: Maximum messages to return (default 100)
             since_turn: Filter messages from this turn onwards
@@ -318,8 +315,6 @@ class MessageLogger:
                     if direction and msg.get("direction") != direction:
                         continue
                     if turn is not None and msg.get("turn") != turn:
-                        continue
-                    if session_id is not None and msg.get("session_id") != session_id:
                         continue
                     if player_id is not None and msg.get("player_id") != player_id:
                         continue

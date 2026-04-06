@@ -1,6 +1,6 @@
 """GameState - Single source of truth for game metadata.
 
-Thread-safe class that holds game metadata (turn, game_id, session_id, etc.)
+Thread-safe class that holds game metadata (turn, game_id, etc.)
 Updated from DLL messages, read by MCP server and other components.
 """
 from __future__ import annotations
@@ -27,7 +27,6 @@ class GameState:
         # Core identifiers
         self._turn_number: Optional[int] = None
         self._game_id: Optional[int] = None
-        self._session_id: Optional[int] = None
         self._player_id: Optional[int] = None
         self._player_name: Optional[str] = None
 
@@ -60,13 +59,6 @@ class GameState:
                     logger.debug(f"Game ID: {self._game_id} → {new_game_id}")
                     self._game_id = new_game_id
 
-            # Update session ID
-            if "session_id" in message:
-                new_session_id = message["session_id"]
-                if self._session_id != new_session_id:
-                    logger.debug(f"Session ID: {self._session_id} → {new_session_id}")
-                    self._session_id = new_session_id
-
             # Update player info
             if "player_id" in message:
                 new_player_id = message["player_id"]
@@ -92,7 +84,6 @@ class GameState:
             return {
                 "turn_number": self._turn_number,
                 "game_id": self._game_id,
-                "session_id": self._session_id,
                 "player_id": self._player_id,
                 "player_name": self._player_name,
                 "connected": self._connected,
@@ -104,7 +95,6 @@ class GameState:
         with self._lock:
             self._turn_number = None
             self._game_id = None
-            self._session_id = None
             self._player_id = None
             self._player_name = None
             self._connected = False
@@ -124,12 +114,6 @@ class GameState:
         """Game ID (persists across saves)."""
         with self._lock:
             return self._game_id
-
-    @property
-    def session_id(self) -> Optional[int]:
-        """Session ID (changes per pipe connection)."""
-        with self._lock:
-            return self._session_id
 
     @property
     def player_id(self) -> Optional[int]:

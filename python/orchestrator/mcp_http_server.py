@@ -63,7 +63,6 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
                     "connected": metadata.get("connected", False),
                     "turn": metadata.get("turn_number"),
                     "game_id": metadata.get("game_id"),
-                    "session_id": metadata.get("session_id"),
                     "player_id": metadata.get("player_id"),
                     "player_name": metadata.get("player_name"),
                 })
@@ -72,7 +71,6 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
                     "connected": False,
                     "turn": None,
                     "game_id": None,
-                    "session_id": None,
                     "player_id": None,
                     "player_name": None,
                 })
