@@ -36,6 +36,10 @@ Civ V DLL (C++) ──named pipe──> Orchestrator (Python) ──HTTP :8765�
 | Model adapters | `python/agent_runtime/models/` |
 | Experiment configs | `python/configs/experiments/` (YAML) |
 
+## Git
+
+Commit often — after each logical change, not just at the end of a session. Each commit should be independently readable: a reviewer should understand what changed and why from the message alone without diffing. Use the imperative mood and lead with the component (`runner: drop deprecated poll_interval`, `launch: add tmux session support`). Reference the reason when it's not obvious from the diff.
+
 ## Key Conventions
 
 **Prefer C++ for new pipe messages.** Lua is acceptable only for choice popups that need to enumerate options (TechPopup, ProductionPopup). Everything else belongs in C++ — single implementation, no JSON helper duplication, centralized in `HandlePipeCommand()`.
