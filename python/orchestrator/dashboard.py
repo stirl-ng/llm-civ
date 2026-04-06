@@ -18,7 +18,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, render_template_string, request
+import time as _time
+
+from flask import Flask, Response, render_template_string, request
 
 # Configure logging
 logging.basicConfig(
@@ -1098,48 +1100,10 @@ TEMPLATE = """
             }
         });
 
-        // Auto-refresh without closing modals
-        let refreshInterval;
+        // Auto-refresh without closing modals — driven by SSE push
 
         function isModalOpen() {
             return document.getElementById('toolModal').classList.contains('visible');
-        }
-
-        async function refreshData() {
-            // Don't refresh if modal is open
-            if (isModalOpen()) {
-                return;
-            }
-
-            try {
-                const params = new URLSearchParams(window.location.search);
-                const response = await fetch('/api/data?' + params.toString());
-                if (!response.ok) return;
-
-                const data = await response.json();
-
-                // Update header status
-                updateHeader(data);
-
-                // Update stats
-                updateStats(data);
-
-                // Update conversation
-                updateConversation(data);
-
-                // Update tool calls
-                updateToolCalls(data);
-
-                // Update notifications or events (depending on verbose mode)
-                updateRightPanel(data);
-
-                // Update debug panel if in debug mode
-                if (data.debug_mode && data.debug) {
-                    updateDebugPanel(data);
-                }
-            } catch (error) {
-                console.error('Refresh failed:', error);
-            }
         }
 
         function updateHeader(data) {
@@ -1354,15 +1318,28 @@ TEMPLATE = """
             return div.innerHTML;
         }
 
-        // Start auto-refresh
-        refreshInterval = setInterval(refreshData, 5000);
+        // Subscribe to SSE push stream — replaces setInterval polling
+        const params = new URLSearchParams(window.location.search);
+        const evtSource = new EventSource('/api/stream?' + params.toString());
 
-        // Clean up on page unload
-        window.addEventListener('beforeunload', () => {
-            if (refreshInterval) {
-                clearInterval(refreshInterval);
+        evtSource.addEventListener('update', (e) => {
+            if (isModalOpen()) return;
+            try {
+                const data = JSON.parse(e.data);
+                updateHeader(data);
+                updateStats(data);
+                updateConversation(data);
+                updateToolCalls(data);
+                updateRightPanel(data);
+                if (data.debug_mode && data.debug) updateDebugPanel(data);
+            } catch (err) {
+                console.error('SSE parse error:', err);
             }
         });
+
+        evtSource.onerror = () => {
+            console.warn('SSE connection lost, browser will auto-reconnect...');
+        };
     </script>
 </body>
 </html>
@@ -1967,6 +1944,55 @@ def api_data():
     return parse_logs(debug_mode=debug_mode, verbose_mode=verbose_mode, game_id=game_id)
 
 
+def _log_mtime(game_id=None) -> float:
+    """Return the most recent mtime of the relevant log file(s).
+
+    Used by the SSE stream to detect when logs change without re-parsing them.
+    """
+    if not LOG_DIR.exists():
+        return 0.0
+    if game_id:
+        f = LOG_DIR / f"game_{game_id}.jsonl"
+        return f.stat().st_mtime if f.exists() else 0.0
+    files = list(LOG_DIR.glob("game_*.jsonl"))
+    return max((f.stat().st_mtime for f in files), default=0.0)
+
+
+@app.route("/api/stream")
+def api_stream():
+    """SSE stream: push fresh data whenever log files change.
+
+    Watches log file mtime at 0.5s intervals and emits an 'update' event
+    whenever it changes. Sends keepalive comments every poll cycle to keep
+    the connection alive through proxies.
+    """
+    debug_mode = request.args.get("debug") == "1"
+    verbose_mode = request.args.get("verbose") == "1"
+    game_id_str = request.args.get("game_id")
+    game_id = int(game_id_str) if game_id_str else None
+
+    def generate():
+        last_mtime = _log_mtime(game_id)
+        # Send initial data immediately so the page populates on connect
+        data = parse_logs(debug_mode=debug_mode, verbose_mode=verbose_mode, game_id=game_id)
+        yield f"event: update\ndata: {json.dumps(data)}\n\n"
+        while True:
+            _time.sleep(0.5)
+            mtime = _log_mtime(game_id)
+            if mtime != last_mtime:
+                last_mtime = mtime
+                data = parse_logs(debug_mode=debug_mode, verbose_mode=verbose_mode, game_id=game_id)
+                yield f"event: update\ndata: {json.dumps(data)}\n\n"
+            else:
+                yield ": keepalive\n\n"
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 def main():
     print("╔══════════════════════════════════════════════════╗")
     print("║         Civ V LLM Dashboard                      ║")
@@ -1984,7 +2010,7 @@ def main():
         game_files = list(LOG_DIR.glob("game_*.jsonl"))
         logger.info(f"Found {len(game_files)} game log files in {LOG_DIR}")
 
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True, threaded=True, use_reloader=False)
 
 
 if __name__ == "__main__":

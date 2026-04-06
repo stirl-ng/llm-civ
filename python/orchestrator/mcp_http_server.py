@@ -12,7 +12,8 @@ Sequential action flow:
 
 import json
 import logging
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import queue
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from typing import Optional
 
@@ -25,6 +26,7 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
     """HTTP request handler for MCP server."""
 
     mcp_server: CivMCPServer = None  # Set by MCPHTTPServer
+    broadcaster = None  # Set by MCPHTTPServer; Optional[EventBroadcaster]
 
     def log_message(self, format: str, *args):
         """Override to use our logger."""
@@ -82,6 +84,9 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
         elif self.path == "/tools":
             tools = self.mcp_server.get_tools()
             self._send_json({"tools": tools})
+
+        elif self.path == "/events":
+            self._handle_sse()
 
         else:
             self._send_error(404, "Not found")
@@ -159,6 +164,38 @@ class MCPHTTPHandler(BaseHTTPRequestHandler):
             logger.error(f"Exception executing tool '{tool_name}': {e} arguments: {arguments} traceback: {traceback.format_exc()}")
             self._send_json({"ok": False, "error": str(e)}, status=500)
 
+    def _handle_sse(self):
+        """Handle a Server-Sent Events (SSE) stream request on GET /events."""
+        if not self.broadcaster:
+            self._send_error(503, "SSE not available")
+            return
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self._send_cors_headers()
+        self.end_headers()
+
+        q = self.broadcaster.subscribe()
+        try:
+            while True:
+                try:
+                    event = q.get(timeout=30)
+                except queue.Empty:
+                    # Send keepalive comment to prevent connection timeout
+                    self.wfile.write(b": keepalive\n\n")
+                    self.wfile.flush()
+                    continue
+                event_type = event.get("event", "message")
+                data = json.dumps(event)
+                self.wfile.write(f"event: {event_type}\ndata: {data}\n\n".encode())
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+        finally:
+            self.broadcaster.unsubscribe(q)
+
     def _send_json(self, data: dict, status: int = 200):
         """Send JSON response."""
         self.send_response(status)
@@ -182,12 +219,14 @@ class MCPHTTPServer:
         self,
         host: str = "localhost",
         port: int = 8765,
-        mcp_server: Optional[CivMCPServer] = None
+        mcp_server: Optional[CivMCPServer] = None,
+        broadcaster=None,
     ):
         self.host = host
         self.port = port
         self.mcp_server = mcp_server
-        self.http_server: Optional[HTTPServer] = None
+        self.broadcaster = broadcaster
+        self.http_server: Optional[ThreadingHTTPServer] = None
         self.thread: Optional[Thread] = None
 
     def start(self):
@@ -196,13 +235,14 @@ class MCPHTTPServer:
             raise RuntimeError("MCPHTTPServer requires an mcp_server instance")
 
         MCPHTTPHandler.mcp_server = self.mcp_server
+        MCPHTTPHandler.broadcaster = self.broadcaster
 
-        self.http_server = HTTPServer((self.host, self.port), MCPHTTPHandler)
+        self.http_server = ThreadingHTTPServer((self.host, self.port), MCPHTTPHandler)
         self.thread = Thread(target=self.http_server.serve_forever, daemon=True)
         self.thread.start()
 
         logger.info(f"MCP HTTP Server started on http://{self.host}:{self.port}")
-        logger.info(f"Endpoints: GET /health, GET /tools, POST /tool")
+        logger.info(f"Endpoints: GET /health, GET /tools, GET /events, POST /tool")
 
     def stop(self):
         """Stop the HTTP server."""

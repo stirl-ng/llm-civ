@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from .message_logger import get_message_logger
 
 if TYPE_CHECKING:
+    from .event_broadcaster import EventBroadcaster
     from .game_state import GameState
 
 logger = logging.getLogger(__name__)
@@ -210,18 +211,25 @@ class NamedPipeServer:
     - Logging
     """
 
-    def __init__(self, pipe_name: str, game_state: Optional["GameState"] = None):
+    def __init__(
+        self,
+        pipe_name: str,
+        game_state: Optional["GameState"] = None,
+        broadcaster: Optional["EventBroadcaster"] = None,
+    ):
         """Initialize the pipe server.
 
         Args:
             pipe_name: Full pipe path (e.g., r"\\\\.\\pipe\\civv_llm")
             game_state: GameState instance to update from messages
+            broadcaster: Optional EventBroadcaster for SSE push events.
         """
         if not pipe_name.startswith("\\\\.\\pipe\\"):
             raise ValueError("pipe_name must start with \\\\.\\pipe\\")
 
         self.pipe_name = pipe_name
         self._game_state = game_state
+        self._broadcaster = broadcaster
         self._running = False
         self._handle: Optional[int] = None
         self._pipe_conn: Optional[PipeConnection] = None
@@ -328,6 +336,15 @@ class NamedPipeServer:
         if msg_type == "turn_start":
             self._validate_turn(message)
 
+        # Emit turn_start event to SSE subscribers
+        if msg_type == "turn_start" and self._broadcaster:
+            self._broadcaster.emit("turn_start", {
+                "turn":        message.get("turn"),
+                "game_id":     message.get("game_id"),
+                "player_id":   message.get("player_id"),
+                "player_name": message.get("player_name"),
+            })
+
     def _validate_turn(self, message: dict[str, Any]) -> None:
         """Check for turn rewind or game_id change (warns only)."""
         new_turn = message.get("turn")
@@ -405,6 +422,10 @@ class NamedPipeServer:
         # Reset game state when pipe disconnects
         if self._game_state:
             self._game_state.reset()
+
+        # Notify SSE subscribers that DLL disconnected
+        if self._broadcaster:
+            self._broadcaster.emit("disconnected", {})
 
         if h:
             try:
