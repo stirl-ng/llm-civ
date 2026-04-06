@@ -1,7 +1,7 @@
 """Simple web dashboard for debugging LLM Civ V runs.
 
 Reads from JSONL logs and displays:
-- Full LLM conversation (system, user, assistant messages)
+- Full LLM conversation organized by turn
 - Tool calls with pass/fail status
 - Token usage stats
 
@@ -45,1311 +45,897 @@ LOG_DIR = Path(__file__).parent.parent / "logs"
 
 TEMPLATE = """
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
     <title>Civ V LLM Dashboard</title>
     <style>
         :root {
-            --bg-dark: #0f0f1a;
-            --bg-panel: #1a1a2e;
-            --bg-panel-alt: #16213e;
-            --bg-input: #0d1526;
-            --accent-green: #00ff88;
-            --accent-blue: #4a9eff;
-            --accent-cyan: #00d4ff;
-            --accent-yellow: #ffd93d;
-            --accent-red: #ff6b6b;
-            --accent-purple: #a855f7;
-            --accent-orange: #ff9f43;
-            --text-primary: #e8e8e8;
-            --text-secondary: #888;
-            --text-muted: #555;
-            --border-subtle: #2a2a4a;
+            --bg:           #0d0d18;
+            --panel:        #181828;
+            --panel-alt:    #1e1e30;
+            --border:       #2a2a42;
+            --border-hi:    #3a3a58;
+            --text:         #e0e0e8;
+            --dim:          #888898;
+            --muted:        #4a4a60;
+            --green:        #3ddc84;
+            --blue:         #5aabff;
+            --cyan:         #20d0e8;
+            --amber:        #e8a020;
+            --red:          #ff5a5a;
+            --purple:       #a06ef0;
+            --orange:       #e87820;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
-
-        html, body {
-            height: 100%;
-            overflow: hidden;
-        }
+        html, body { height: 100%; overflow: hidden; }
 
         body {
             font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Consolas', monospace;
-            background: var(--bg-dark);
-            color: var(--text-primary);
-            padding: 16px;
+            background: var(--bg);
+            color: var(--text);
+            font-size: 13px;
             line-height: 1.5;
             display: flex;
             flex-direction: column;
         }
 
-        /* Scrollbar styling */
-        ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
-        }
-        ::-webkit-scrollbar-track {
-            background: var(--bg-dark);
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: var(--border-subtle);
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: var(--text-muted);
-        }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--dim); }
 
-        /* Header */
+        /* ── Header ── */
         .header {
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            padding: 12px 20px;
-            background: linear-gradient(135deg, var(--bg-panel) 0%, var(--bg-panel-alt) 100%);
-            border-radius: 12px;
-            margin-bottom: 16px;
+            gap: 12px;
+            padding: 9px 14px;
+            border-bottom: 1px solid var(--border);
             flex-shrink: 0;
-            border: 1px solid var(--border-subtle);
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            background: var(--panel);
         }
-
-        .header h1 {
-            font-size: 16px;
-            font-weight: 600;
-            letter-spacing: 2px;
-            background: linear-gradient(90deg, var(--accent-green), var(--accent-cyan));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        .status {
-            display: flex;
-            gap: 24px;
-            font-size: 13px;
-            align-items: center;
-        }
-
-        .status-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            animation: pulse 2s ease-in-out infinite;
-        }
-        .dot.green {
-            background: var(--accent-green);
-            box-shadow: 0 0 10px var(--accent-green);
-        }
-        .dot.red {
-            background: var(--accent-red);
-            box-shadow: 0 0 10px var(--accent-red);
-            animation: none;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
-        .turn-display {
-            font-size: 20px;
-            font-weight: 700;
-            color: var(--accent-yellow);
-        }
-
-        .game-selector {
-            position: relative;
-            display: inline-block;
-        }
-
-        .game-selector-btn {
-            background: var(--bg-input);
-            border: 1px solid var(--border-subtle);
-            color: var(--text-primary);
-            padding: 6px 12px;
-            border-radius: 6px;
+        .brand {
             font-size: 12px;
-            cursor: pointer;
+            font-weight: 700;
+            letter-spacing: 2px;
+            color: var(--amber);
+            flex-shrink: 0;
+        }
+        .sep { color: var(--muted); }
+        .status-dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .status-dot.green { background: var(--green); box-shadow: 0 0 5px var(--green); }
+        .status-dot.red   { background: var(--red); }
+        .turn-chip { font-size: 12px; color: var(--dim); }
+        .turn-chip strong { color: var(--text); font-weight: 600; }
+        .header-right {
+            margin-left: auto;
             display: flex;
             align-items: center;
-            gap: 8px;
-            transition: all 0.2s ease;
+            gap: 12px;
+        }
+        .cost-info { font-size: 11px; color: var(--dim); }
+        .cost-val  { color: var(--green); font-weight: 600; }
+        .last-update { font-size: 10px; color: var(--muted); }
+
+        /* game selector */
+        .game-selector { position: relative; }
+        .game-selector-btn {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--dim);
             font-family: inherit;
+            font-size: 11px;
+            padding: 3px 9px;
+            border-radius: 4px;
+            cursor: pointer;
         }
-
-        .game-selector-btn:hover {
-            background: var(--bg-panel-alt);
-            border-color: var(--accent-cyan);
-        }
-
+        .game-selector-btn:hover { border-color: var(--border-hi); color: var(--text); }
         .game-selector-dropdown {
             display: none;
             position: absolute;
-            top: 100%;
+            top: calc(100% + 4px);
             right: 0;
-            margin-top: 4px;
-            background: var(--bg-panel);
-            border: 1px solid var(--border-subtle);
-            border-radius: 8px;
-            min-width: 200px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-            z-index: 1000;
+            background: var(--panel);
+            border: 1px solid var(--border-hi);
+            border-radius: 6px;
+            min-width: 170px;
+            z-index: 200;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.5);
         }
-
-        .game-selector:hover .game-selector-dropdown {
-            display: block;
-        }
-
+        .game-selector:hover .game-selector-dropdown { display: block; }
         .game-selector-item {
-            padding: 10px 12px;
-            color: var(--text-secondary);
-            text-decoration: none;
             display: flex;
             justify-content: space-between;
-            align-items: center;
+            padding: 7px 11px;
             font-size: 11px;
-            transition: background 0.2s ease;
-            border-bottom: 1px solid var(--border-subtle);
+            color: var(--dim);
+            text-decoration: none;
+            border-bottom: 1px solid var(--border);
         }
+        .game-selector-item:last-child { border-bottom: none; }
+        .game-selector-item:hover { background: var(--panel-alt); color: var(--text); }
+        .game-selector-item.current { color: var(--cyan); }
+        .msg-count { color: var(--muted); font-size: 10px; }
 
-        .game-selector-item:last-child {
-            border-bottom: none;
-        }
-
-        .game-selector-item:hover {
-            background: var(--bg-input);
-            color: var(--text-primary);
-        }
-
-        .game-selector-item.current {
-            background: var(--bg-input);
-            color: var(--accent-cyan);
-            font-weight: 600;
-        }
-
-        .game-selector-item .game-id {
-            font-weight: 600;
-        }
-
-        .game-selector-item .msg-count {
-            color: var(--text-muted);
-            font-size: 10px;
-        }
-
-        /* Main layout */
+        /* ── Layout ── */
         .columns {
             display: grid;
-            grid-template-columns: 5fr 3fr;
-            gap: 16px;
+            grid-template-columns: 3fr 2fr;
+            gap: 10px;
             flex: 1;
             min-height: 0;
+            padding: 10px;
         }
-
         .right-column {
             display: flex;
             flex-direction: column;
-            gap: 16px;
+            gap: 10px;
             min-height: 0;
         }
 
-        /* Panels */
+        /* ── Panel ── */
         .panel {
-            background: var(--bg-panel);
-            border-radius: 12px;
-            padding: 16px;
-            overflow-y: auto;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 7px;
+            display: flex;
+            flex-direction: column;
             min-height: 0;
-            border: 1px solid var(--border-subtle);
+            overflow: hidden;
         }
-
-        .panel.half {
-            flex: 1 1 0;
-            overflow-y: auto;
-        }
-
-        .panel h2 {
-            font-size: 11px;
-            text-transform: uppercase;
-            color: var(--text-secondary);
-            margin-bottom: 12px;
-            letter-spacing: 1.5px;
-            position: sticky;
-            top: 0;
-            background: var(--bg-panel);
-            padding: 4px 0 8px 0;
-            z-index: 10;
+        .panel.half { flex: 1 1 0; min-height: 0; }
+        .panel-header {
             display: flex;
             align-items: center;
             gap: 8px;
-        }
-
-        .panel h2::before {
-            content: '';
-            display: inline-block;
-            width: 3px;
-            height: 12px;
-            background: var(--accent-cyan);
-            border-radius: 2px;
-        }
-
-        .count-badge {
-            font-size: 10px;
-            background: var(--bg-input);
-            padding: 2px 8px;
-            border-radius: 10px;
-            color: var(--text-muted);
-            font-weight: normal;
-        }
-
-        /* Stats bar */
-        .stats-bar {
-            display: flex;
-            gap: 24px;
-            padding: 12px 16px;
-            background: var(--bg-input);
-            border-radius: 8px;
-            margin-bottom: 16px;
-            font-size: 12px;
-            border: 1px solid var(--border-subtle);
-        }
-
-        .stat {
-            color: var(--accent-cyan);
-            font-weight: 600;
-            font-size: 14px;
-        }
-
-        .stat-label {
-            color: var(--text-muted);
-            margin-left: 6px;
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        /* Chat messages */
-        .chat-message {
-            margin-bottom: 12px;
-            padding: 12px 14px;
-            border-radius: 8px;
-            font-size: 12px;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            border-left: 3px solid transparent;
-            transition: transform 0.1s ease, box-shadow 0.1s ease;
-        }
-
-        .chat-message:hover {
-            transform: translateX(2px);
-        }
-
-        .chat-message.system {
-            background: linear-gradient(135deg, #252540 0%, #1a1a30 100%);
-            border-left-color: var(--text-muted);
-            font-size: 11px;
-            color: var(--text-secondary);
-            max-height: 150px;
-            overflow-y: auto;
-        }
-
-        .chat-message.user {
-            background: linear-gradient(135deg, #1a3a5c 0%, #152a45 100%);
-            border-left-color: var(--accent-blue);
-        }
-
-        .chat-message.assistant {
-            background: linear-gradient(135deg, #1a4a3a 0%, #153a2d 100%);
-            border-left-color: var(--accent-green);
-        }
-
-        .chat-message .role {
-            font-size: 9px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 6px;
-            font-weight: 600;
-        }
-
-        .chat-message.system .role { color: var(--text-muted); }
-        .chat-message.user .role { color: var(--accent-blue); }
-        .chat-message.assistant .role { color: var(--accent-green); }
-
-        .chat-message .tokens {
-            font-size: 10px;
-            color: var(--text-muted);
-            font-weight: normal;
-            margin-left: 8px;
-        }
-
-        .chat-message .content {
-            line-height: 1.6;
-        }
-
-        /* Turn divider */
-        .turn-divider {
-            text-align: center;
-            padding: 10px 16px;
-            color: var(--accent-yellow);
-            font-size: 11px;
-            font-weight: 600;
-            letter-spacing: 2px;
-            margin: 16px 0;
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-        }
-
-        .turn-divider::before,
-        .turn-divider::after {
-            content: '';
-            flex: 1;
-            height: 1px;
-            background: linear-gradient(90deg, transparent, var(--accent-yellow), transparent);
-        }
-
-        /* Tool calls */
-        .tool-call {
-            padding: 10px 12px;
-            margin-bottom: 8px;
-            border-radius: 6px;
-            font-size: 11px;
-            transition: transform 0.1s ease;
-        }
-
-        .tool-call:hover {
-            transform: translateX(2px);
-        }
-
-        .tool-call.query {
-            background: linear-gradient(135deg, #1a2a4a 0%, #152238 100%);
-            border-left: 3px solid var(--accent-blue);
-        }
-
-        .tool-call.action {
-            background: linear-gradient(135deg, #3a2a1a 0%, #2d2215 100%);
-            border-left: 3px solid var(--accent-orange);
-        }
-
-        .tool-call.error {
-            background: linear-gradient(135deg, #3a1a1a 0%, #2d1515 100%);
-            border-left: 3px solid var(--accent-red);
-        }
-
-        .tool-call-header {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 6px;
-        }
-
-        .tool-call .icon {
-            font-size: 12px;
-            width: 18px;
-            height: 18px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 50%;
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border);
             flex-shrink: 0;
         }
-
-        .tool-call.query .icon {
-            background: rgba(74, 158, 255, 0.2);
-            color: var(--accent-blue);
+        .panel-title {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--dim);
+            font-weight: 600;
         }
-
-        .tool-call.action .icon {
-            background: rgba(255, 159, 67, 0.2);
-            color: var(--accent-orange);
+        .count-badge {
+            font-size: 10px;
+            background: var(--panel-alt);
+            border: 1px solid var(--border);
+            padding: 1px 6px;
+            border-radius: 8px;
+            color: var(--muted);
         }
-
-        .tool-call.error .icon {
-            background: rgba(255, 107, 107, 0.2);
-            color: var(--accent-red);
-        }
-
-        .tool-call .name {
+        .panel-scroll {
+            overflow-y: auto;
             flex: 1;
-            font-weight: 600;
-            font-family: inherit;
+            padding: 8px;
         }
 
-        .tool-call .turn-badge {
-            font-size: 9px;
-            background: var(--bg-input);
-            padding: 3px 8px;
-            border-radius: 4px;
-            color: var(--text-muted);
+        /* ── Turn cards ── */
+        .turn-card {
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            margin-bottom: 6px;
+            background: var(--panel-alt);
         }
+        .turn-card.expanded { border-color: var(--border-hi); }
 
-        .tool-call-result {
-            font-size: 10px;
-            color: var(--text-secondary);
-            padding-left: 28px;
-            line-height: 1.4;
-        }
-
-        .tool-call-result.success {
-            color: var(--accent-green);
-        }
-
-        .tool-call-result.error {
-            color: var(--accent-red);
-        }
-
-        /* Notifications */
-        .notification {
-            padding: 10px 12px;
-            margin-bottom: 8px;
-            border-radius: 6px;
-            font-size: 11px;
-            background: linear-gradient(135deg, #1a2a4a 0%, #152238 100%);
-            border-left: 3px solid var(--accent-blue);
-            transition: transform 0.1s ease;
-        }
-
-        .notification:hover {
-            transform: translateX(2px);
-        }
-
-        .notification .summary {
-            font-weight: 600;
-            color: var(--accent-blue);
-            margin-bottom: 4px;
-        }
-
-        .notification .message {
-            color: var(--text-secondary);
-            font-size: 10px;
-            line-height: 1.4;
-        }
-
-        .notification .meta {
-            font-size: 9px;
-            color: var(--text-muted);
-            margin-top: 6px;
-            display: flex;
-            gap: 12px;
-        }
-
-        /* Game event */
-        .game-event {
-            padding: 10px 12px;
-            margin-bottom: 8px;
-            border-radius: 6px;
-            font-size: 11px;
-            background: linear-gradient(135deg, #2a1a4a 0%, #1f1538 100%);
-            border-left: 3px solid var(--accent-purple);
-        }
-
-        .game-event .event-type {
-            font-weight: 600;
-            color: var(--accent-purple);
-            margin-bottom: 4px;
-            font-size: 10px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .game-event .event-content {
-            color: var(--text-secondary);
-            font-size: 10px;
-            line-height: 1.4;
-        }
-
-        .empty {
-            color: var(--text-muted);
-            font-style: italic;
-            padding: 30px;
-            text-align: center;
-            font-size: 12px;
-        }
-
-        /* Debug panel */
-        .debug-panel {
-            background: linear-gradient(135deg, #2a1a3a 0%, #1a1528 100%);
-            border: 1px solid var(--accent-purple);
-            border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 16px;
-            font-size: 11px;
-        }
-
-        .debug-panel h3 {
-            color: var(--accent-purple);
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 12px;
+        .turn-card-header {
             display: flex;
             align-items: center;
             gap: 8px;
+            padding: 8px 10px;
+            cursor: pointer;
+            user-select: none;
+        }
+        .turn-card-header:hover { background: rgba(255,255,255,0.02); }
+        .caret { color: var(--muted); font-size: 9px; flex-shrink: 0; }
+        .turn-card.expanded .caret  { color: var(--amber); }
+
+        .turn-num {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.8px;
+            color: var(--dim);
+            flex-shrink: 0;
+        }
+        .turn-card.expanded .turn-num { color: var(--amber); }
+
+        .badge {
+            font-size: 9px;
+            padding: 1px 6px;
+            border-radius: 8px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+            flex-shrink: 0;
+        }
+        .badge.active { color: var(--green);  border: 1px solid rgba(61,220,132,0.35); background: rgba(61,220,132,0.1); }
+        .badge.done   { color: var(--muted);  border: 1px solid var(--border); }
+        .badge.error  { color: var(--red);    border: 1px solid rgba(255,90,90,0.3); background: rgba(255,90,90,0.08); }
+
+        .turn-stats { font-size: 10px; color: var(--muted); margin-left: auto; }
+
+        /* Card body */
+        .turn-card-body {
+            padding: 8px 10px 10px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
         }
 
-        .debug-panel h3::before {
-            content: '🔍';
-        }
-
-        .debug-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 16px;
-        }
-
-        .debug-section {
-            background: rgba(0, 0, 0, 0.2);
-            padding: 12px;
-            border-radius: 6px;
-        }
-
-        .debug-section h4 {
-            color: var(--text-secondary);
+        /* Briefing */
+        .briefing-toggle {
             font-size: 10px;
             text-transform: uppercase;
-            margin-bottom: 8px;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.8px;
+            color: var(--blue);
+            cursor: pointer;
+            user-select: none;
         }
-
-        .debug-item {
-            display: flex;
-            justify-content: space-between;
-            padding: 4px 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-        }
-
-        .debug-item:last-child {
-            border-bottom: none;
-        }
-
-        .debug-key {
-            color: var(--text-muted);
-        }
-
-        .debug-value {
-            color: var(--accent-cyan);
-            font-weight: 500;
-        }
-
-        .debug-value.warning {
-            color: var(--accent-yellow);
-        }
-
-        .debug-value.error {
-            color: var(--accent-red);
-        }
-
-        .toggle-buttons {
-            position: fixed;
-            bottom: 16px;
-            right: 16px;
-            display: flex;
-            gap: 8px;
-            z-index: 100;
-        }
-
-        .toggle-btn {
-            background: var(--bg-panel);
-            border: 1px solid var(--border-subtle);
-            color: var(--text-secondary);
-            padding: 8px 16px;
-            border-radius: 20px;
+        .briefing-toggle:hover { color: var(--cyan); }
+        .briefing-text {
+            margin-top: 5px;
             font-size: 11px;
-            text-decoration: none;
-            transition: all 0.2s ease;
+            color: var(--dim);
+            white-space: pre-wrap;
+            line-height: 1.5;
+            max-height: 180px;
+            overflow-y: auto;
+            padding: 7px 9px;
+            background: rgba(0,0,0,0.25);
+            border-radius: 4px;
+            border-left: 2px solid var(--border-hi);
+        }
+
+        /* Reasoning */
+        .reasoning-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--green);
+            margin-bottom: 3px;
             display: flex;
             align-items: center;
             gap: 6px;
         }
+        .tok-badge { color: var(--muted); font-weight: normal; text-transform: none; letter-spacing: 0; }
+        .reasoning-text { font-size: 12px; color: var(--text); white-space: pre-wrap; line-height: 1.6; }
+        .show-more { color: var(--blue); cursor: pointer; font-size: 10px; }
+        .show-more:hover { color: var(--cyan); }
 
-        .toggle-btn:hover {
-            background: var(--bg-panel-alt);
-            transform: translateY(-1px);
-        }
-
-        .toggle-btn.active {
-            background: var(--bg-panel-alt);
-            border-color: var(--accent-purple);
-            color: var(--accent-purple);
-        }
-
-        .toggle-btn.active:hover {
-            border-color: var(--accent-cyan);
-            color: var(--accent-cyan);
-        }
-
-        /* Unrecognized types list */
-        .unrecognized-list {
-            font-family: inherit;
+        /* Actions row */
+        .actions-row { display: flex; flex-wrap: wrap; gap: 5px; }
+        .action-pill {
             font-size: 10px;
+            padding: 2px 7px;
+            border-radius: 3px;
+            border: 1px solid;
         }
+        .action-pill.ok      { color: var(--amber);  border-color: rgba(232,160,32,0.35); background: rgba(232,160,32,0.08); }
+        .action-pill.err     { color: var(--red);    border-color: rgba(255,90,90,0.3);  background: rgba(255,90,90,0.08); }
+        .action-pill.end_turn{ color: var(--green);  border-color: rgba(61,220,132,0.3); background: rgba(61,220,132,0.08); }
 
-        .unrecognized-item {
-            color: var(--accent-yellow);
-            padding: 2px 0;
+        /* ── Tool list ── */
+        .turn-group-label {
+            font-size: 9px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            padding: 4px 2px 2px;
+            border-top: 1px solid var(--border);
+            margin: 4px 0 3px;
         }
+        .turn-group-label:first-child { border-top: none; margin-top: 0; padding-top: 0; }
 
-        /* Modal */
+        .tool-item {
+            display: grid;
+            grid-template-columns: 15px 1fr;
+            grid-template-rows: auto auto;
+            column-gap: 6px;
+            row-gap: 1px;
+            padding: 5px 7px;
+            border-radius: 4px;
+            margin-bottom: 2px;
+            cursor: pointer;
+            border: 1px solid transparent;
+        }
+        .tool-item:hover { background: var(--panel-alt); border-color: var(--border); }
+
+        .tool-icon {
+            grid-row: 1 / 3;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            color: var(--dim);
+            align-self: center;
+        }
+        .tool-item.query  .tool-icon { color: var(--blue); }
+        .tool-item.action .tool-icon { color: var(--amber); }
+        .tool-item.error  .tool-icon { color: var(--red); }
+
+        .tool-name { font-size: 11px; font-weight: 600; color: var(--text); }
+        .tool-result { font-size: 10px; }
+        .tool-result.ok  { color: var(--dim); }
+        .tool-result.err { color: var(--red); }
+
+        /* ── Notifications ── */
+        .notif-item {
+            display: flex;
+            gap: 7px;
+            align-items: baseline;
+            padding: 4px 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 11px;
+        }
+        .notif-item:last-child { border-bottom: none; }
+        .notif-turn { font-size: 9px; color: var(--muted); flex-shrink: 0; min-width: 22px; }
+        .notif-text { color: var(--dim); }
+
+        /* ── Empty ── */
+        .empty { color: var(--muted); font-size: 11px; text-align: center; padding: 22px; font-style: italic; }
+
+        /* ── Modal ── */
         .modal-overlay {
             display: none;
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.8);
+            inset: 0;
+            background: rgba(0,0,0,0.78);
             z-index: 1000;
             align-items: center;
             justify-content: center;
             padding: 20px;
         }
-
-        .modal-overlay.visible {
-            display: flex;
-        }
-
+        .modal-overlay.visible { display: flex; }
         .modal-content {
-            background: var(--bg-panel);
-            border: 1px solid var(--border-subtle);
-            border-radius: 12px;
-            max-width: 900px;
+            background: var(--panel);
+            border: 1px solid var(--border-hi);
+            border-radius: 8px;
+            max-width: 860px;
             max-height: 90vh;
             width: 100%;
             display: flex;
             flex-direction: column;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.6);
         }
-
         .modal-header {
-            padding: 16px 20px;
-            border-bottom: 1px solid var(--border-subtle);
             display: flex;
             align-items: center;
             justify-content: space-between;
+            padding: 13px 17px;
+            border-bottom: 1px solid var(--border);
         }
-
-        .modal-header h3 {
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--text-primary);
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
+        .modal-title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
         .modal-close {
-            background: none;
-            border: none;
-            color: var(--text-secondary);
-            font-size: 20px;
-            cursor: pointer;
-            padding: 4px 8px;
-            border-radius: 4px;
-            transition: all 0.2s ease;
+            background: none; border: none; color: var(--dim);
+            font-size: 18px; cursor: pointer; padding: 2px 6px; border-radius: 3px;
         }
-
-        .modal-close:hover {
-            background: var(--bg-input);
-            color: var(--text-primary);
+        .modal-close:hover { background: var(--panel-alt); color: var(--text); }
+        .modal-body { padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 14px; }
+        .modal-section-label {
+            font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+            color: var(--cyan); margin-bottom: 7px;
         }
-
-        .modal-body {
-            padding: 20px;
-            overflow-y: auto;
-            flex: 1;
-        }
-
-        .modal-section {
-            margin-bottom: 20px;
-        }
-
-        .modal-section:last-child {
-            margin-bottom: 0;
-        }
-
-        .modal-section h4 {
-            font-size: 11px;
-            text-transform: uppercase;
-            color: var(--accent-cyan);
-            margin-bottom: 10px;
-            letter-spacing: 1px;
-        }
-
         .modal-json {
-            background: var(--bg-input);
-            border: 1px solid var(--border-subtle);
-            border-radius: 6px;
-            padding: 12px;
-            font-family: 'JetBrains Mono', 'SF Mono', monospace;
+            background: #09090f;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 11px;
             font-size: 11px;
             line-height: 1.6;
             overflow-x: auto;
             white-space: pre-wrap;
             word-wrap: break-word;
-            color: var(--text-secondary);
+            color: var(--dim);
+            font-family: inherit;
         }
 
-        .tool-call {
-            cursor: pointer;
-            position: relative;
-        }
-
-        .tool-call::after {
-            content: '›';
-            position: absolute;
+        /* ── Toggle buttons ── */
+        .toggle-buttons {
+            position: fixed;
+            bottom: 12px;
             right: 12px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: var(--text-muted);
-            font-size: 16px;
-            opacity: 0;
-            transition: opacity 0.2s ease;
+            display: flex;
+            gap: 6px;
+            z-index: 100;
         }
+        .toggle-btn {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            color: var(--dim);
+            padding: 5px 12px;
+            border-radius: 14px;
+            font-size: 10px;
+            font-family: inherit;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .toggle-btn:hover { border-color: var(--border-hi); color: var(--text); }
+        .toggle-btn.active { border-color: var(--purple); color: var(--purple); }
 
-        .tool-call:hover {
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        /* ── Debug panel ── */
+        .debug-panel {
+            margin: 0 10px 10px;
+            background: var(--panel-alt);
+            border: 1px solid var(--purple);
+            border-radius: 6px;
+            padding: 12px;
+            font-size: 11px;
         }
-
-        .tool-call:hover::after {
-            opacity: 1;
+        .debug-panel h3 {
+            color: var(--purple); font-size: 10px; text-transform: uppercase;
+            letter-spacing: 1px; margin-bottom: 10px;
         }
+        .debug-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+        .debug-section { background: rgba(0,0,0,0.2); padding: 10px; border-radius: 4px; }
+        .debug-section h4 { color: var(--dim); font-size: 10px; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px; }
+        .debug-item { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+        .debug-item:last-child { border-bottom: none; }
+        .debug-key { color: var(--muted); }
+        .debug-val { color: var(--cyan); font-weight: 500; }
+        .debug-val.warn { color: var(--amber); }
+        .debug-val.err  { color: var(--red); }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>◈ CIV V LLM DASHBOARD</h1>
-        <div class="status">
-            <div class="status-item">
-                <span class="dot {{ 'green' if connected else 'red' }}"></span>
-                {{ 'Connected' if connected else 'Disconnected' }}
-            </div>
-            <div class="status-item">
-                Turn <span class="turn-display">{{ current_turn or '—' }}</span>
-            </div>
-            {% if available_games %}
-            <div class="status-item">
-                <div class="game-selector">
-                    <button class="game-selector-btn">
-                        Game {{ game_id or '—' }}
-                        <span>▾</span>
-                    </button>
-                    <div class="game-selector-dropdown">
-                        {% for game in available_games %}
-                        <a href="?game_id={{ game.game_id }}{% if debug_mode %}&debug=1{% endif %}{% if verbose_mode %}&verbose=1{% endif %}"
-                           class="game-selector-item {{ 'current' if game.is_current else '' }}">
-                            <span class="game-id">{{ game.game_id }}</span>
-                            <span class="msg-count">{{ game.message_count }} msgs</span>
-                        </a>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-            <div class="status-item" style="color: var(--text-muted);">
-                {{ last_update }}
-            </div>
-        </div>
-    </div>
 
-    {% if debug_mode %}
-    <div class="debug-panel">
-        <h3>Parse Diagnostics</h3>
-        <div class="debug-grid">
-            <div class="debug-section">
-                <h4>File Stats</h4>
-                <div class="debug-item">
-                    <span class="debug-key">Log file</span>
-                    <span class="debug-value">{{ debug.log_file_name }}</span>
-                </div>
-                <div class="debug-item">
-                    <span class="debug-key">File exists</span>
-                    <span class="debug-value {% if not debug.file_exists %}error{% endif %}">{{ 'Yes' if debug.file_exists else 'No' }}</span>
-                </div>
-                <div class="debug-item">
-                    <span class="debug-key">Total lines</span>
-                    <span class="debug-value">{{ debug.total_lines }}</span>
-                </div>
-                <div class="debug-item">
-                    <span class="debug-key">Parse errors</span>
-                    <span class="debug-value {% if debug.parse_errors > 0 %}error{% endif %}">{{ debug.parse_errors }}</span>
-                </div>
-                <div class="debug-item">
-                    <span class="debug-key">Empty lines</span>
-                    <span class="debug-value">{{ debug.empty_lines }}</span>
-                </div>
-            </div>
-
-            <div class="debug-section">
-                <h4>Message Types Found</h4>
-                {% for msg_type, count in debug.type_counts.items() %}
-                <div class="debug-item">
-                    <span class="debug-key">{{ msg_type or '(no type)' }}</span>
-                    <span class="debug-value">{{ count }}</span>
-                </div>
-                {% endfor %}
-            </div>
-
-            <div class="debug-section">
-                <h4>Display Limits</h4>
-                <div class="debug-item">
-                    <span class="debug-key">Conversation (max 50)</span>
-                    <span class="debug-value {% if debug.conversation_before_limit > 50 %}warning{% endif %}">{{ debug.conversation_before_limit }} → {{ debug.conversation_after_limit }}</span>
-                </div>
-                <div class="debug-item">
-                    <span class="debug-key">Tool calls (max 100)</span>
-                    <span class="debug-value {% if debug.tools_before_limit > 100 %}warning{% endif %}">{{ debug.tools_before_limit }} → {{ debug.tools_after_limit }}</span>
-                </div>
-                <div class="debug-item">
-                    <span class="debug-key">Game events (max 50)</span>
-                    <span class="debug-value {% if debug.events_before_limit > 50 %}warning{% endif %}">{{ debug.events_before_limit }} → {{ debug.events_after_limit }}</span>
-                </div>
-                <div class="debug-item">
-                    <span class="debug-key">Notifications (max 50)</span>
-                    <span class="debug-value {% if debug.notifs_before_limit > 50 %}warning{% endif %}">{{ debug.notifs_before_limit }} → {{ debug.notifs_after_limit }}</span>
-                </div>
-            </div>
-
-            {% if debug.unrecognized_types %}
-            <div class="debug-section">
-                <h4>Unrecognized Message Types</h4>
-                <div class="unrecognized-list">
-                    {% for t in debug.unrecognized_types %}
-                    <div class="unrecognized-item">{{ t }}</div>
-                    {% endfor %}
-                </div>
-            </div>
-            {% endif %}
+<!-- Header -->
+<div class="header">
+    <span class="brand">◈ CIV V</span>
+    <span class="sep">│</span>
+    <span class="status-dot {{ 'green' if connected else 'red' }}"></span>
+    <span class="turn-chip">Turn <strong class="turn-display">{{ current_turn or '—' }}</strong></span>
+    {% if available_games %}
+    <span class="sep">│</span>
+    <div class="game-selector">
+        <button class="game-selector-btn">Game {{ game_id or '—' }} ▾</button>
+        <div class="game-selector-dropdown">
+            {% for game in available_games %}
+            <a href="?game_id={{ game.game_id }}{% if debug_mode %}&debug=1{% endif %}{% if verbose_mode %}&verbose=1{% endif %}"
+               class="game-selector-item {{ 'current' if game.is_current else '' }}">
+                <span>{{ game.game_id }}</span>
+                <span class="msg-count">{{ game.message_count }} msgs</span>
+            </a>
+            {% endfor %}
         </div>
     </div>
     {% endif %}
+    <div class="header-right">
+        <span class="cost-info">
+            <span class="cost-val">${{ "%.4f"|format(estimated_cost) }}</span>
+            &thinsp;·&thinsp; {{ total_requests }} req
+            &thinsp;·&thinsp; {{ "{:,}".format(total_tokens) }} tok
+        </span>
+        <span class="last-update last-update-text">{{ last_update }}</span>
+    </div>
+</div>
 
-    <div class="columns">
-        <div class="panel">
-            <h2>LLM Conversation <span class="count-badge">{{ conversation|length }}</span></h2>
-            <div class="stats-bar">
-                <span><span class="stat">{{ "{:,}".format(total_tokens) }}</span><span class="stat-label">tokens</span></span>
-                <span><span class="stat">{{ total_requests }}</span><span class="stat-label">requests</span></span>
-                <span><span class="stat">${{ "%.4f"|format(estimated_cost) }}</span><span class="stat-label">est cost</span></span>
-            </div>
-
-            <div class="conversation-messages">
-            {% if conversation %}
-                {% for msg in conversation %}
-                    {% if msg.type == 'turn_divider' %}
-                    <div class="turn-divider">TURN {{ msg.turn }}</div>
-                    {% else %}
-                    <div class="chat-message {{ msg.role }}">
-                        <div class="role">{{ msg.role }}{% if msg.tokens %}<span class="tokens">{{ msg.tokens }} tok</span>{% endif %}</div>
-                        <div class="content">{{ msg.content }}</div>
-                    </div>
-                    {% endif %}
-                {% endfor %}
-            {% else %}
-                <div class="empty">No conversation yet — waiting for LLM activity</div>
-            {% endif %}
-            </div>
+{% if debug_mode %}
+<div class="debug-panel">
+    <h3>🔍 Parse Diagnostics</h3>
+    <div class="debug-grid">
+        <div class="debug-section">
+            <h4>File</h4>
+            <div class="debug-item"><span class="debug-key">name</span><span class="debug-val">{{ debug.log_file_name }}</span></div>
+            <div class="debug-item"><span class="debug-key">exists</span><span class="debug-val {% if not debug.file_exists %}err{% endif %}">{{ 'yes' if debug.file_exists else 'no' }}</span></div>
+            <div class="debug-item"><span class="debug-key">lines</span><span class="debug-val">{{ debug.total_lines }}</span></div>
+            <div class="debug-item"><span class="debug-key">parse errors</span><span class="debug-val {% if debug.parse_errors > 0 %}err{% endif %}">{{ debug.parse_errors }}</span></div>
         </div>
+        <div class="debug-section">
+            <h4>Message Types</h4>
+            {% for t, n in debug.type_counts.items() %}
+            <div class="debug-item"><span class="debug-key">{{ t or '(none)' }}</span><span class="debug-val">{{ n }}</span></div>
+            {% endfor %}
+        </div>
+        <div class="debug-section">
+            <h4>Display Limits</h4>
+            <div class="debug-item"><span class="debug-key">conv (max 50)</span><span class="debug-val {% if debug.conversation_before_limit > 50 %}warn{% endif %}">{{ debug.conversation_before_limit }} → {{ debug.conversation_after_limit }}</span></div>
+            <div class="debug-item"><span class="debug-key">tools (max 100)</span><span class="debug-val {% if debug.tools_before_limit > 100 %}warn{% endif %}">{{ debug.tools_before_limit }} → {{ debug.tools_after_limit }}</span></div>
+            <div class="debug-item"><span class="debug-key">notifs (max 50)</span><span class="debug-val {% if debug.notifs_before_limit > 50 %}warn{% endif %}">{{ debug.notifs_before_limit }} → {{ debug.notifs_after_limit }}</span></div>
+        </div>
+        {% if debug.unrecognized_types %}
+        <div class="debug-section">
+            <h4>Unrecognized Types</h4>
+            {% for t in debug.unrecognized_types %}
+            <div class="debug-item"><span class="debug-key" style="color:var(--amber)">{{ t }}</span></div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
 
-        <div class="right-column">
-            <div class="panel half">
-                <h2>Tool Activity <span class="count-badge">{{ tool_calls|length }}</span></h2>
-                <div class="tool-calls-container">
-                {% if tool_calls %}
-                    {% for tool in tool_calls %}
-                    <div class="tool-call {{ tool.category }} {{ 'error' if not tool.ok else '' }}" onclick="openToolModal({{ loop.index0 }})">
-                        <div class="tool-call-header">
-                            <span class="icon">{{ tool.icon }}</span>
-                            <span class="name">{{ tool.name }}</span>
-                            <span class="turn-badge">T{{ tool.turn }}</span>
-                        </div>
-                        {% if tool.result_summary %}
-                        <div class="tool-call-result {{ 'success' if tool.ok else 'error' }}">{{ tool.result_summary }}</div>
-                        {% endif %}
-                    </div>
-                    {% endfor %}
-                {% else %}
-                    <div class="empty">No tool calls yet</div>
-                {% endif %}
-                </div>
-            </div>
-
-            {% if verbose_mode %}
-            <div class="panel half">
-                <h2>Game Events <span class="count-badge">{{ game_events|length }}</span></h2>
-                <div class="events-container">
-                {% if game_events %}
-                    {% for event in game_events %}
-                    <div class="game-event">
-                        <div class="event-type">{{ event.event_type }}</div>
-                        <div class="event-content">{{ event.content }}</div>
-                    </div>
-                    {% endfor %}
-                {% else %}
-                    <div class="empty">No game events yet</div>
-                {% endif %}
-                </div>
-            </div>
-            {% else %}
-            <div class="panel half">
-                <h2>Notifications <span class="count-badge">{{ notifications|length }}</span></h2>
-                <div class="notifications-container">
-                {% if notifications %}
-                    {% for notif in notifications %}
-                    <div class="notification">
-                        <div class="summary">{{ notif.summary }}</div>
-                        {% if notif.message and notif.message != notif.summary %}
-                        <div class="message">{{ notif.message }}</div>
-                        {% endif %}
-                        <div class="meta">
-                            <span>T{{ notif.turn }}</span>
-                            <span>Type {{ notif.notif_type }}</span>
-                        </div>
-                    </div>
-                    {% endfor %}
-                {% else %}
-                    <div class="empty">No notifications yet</div>
-                {% endif %}
-                </div>
-            </div>
-            {% endif %}
+<!-- Main layout -->
+<div class="columns">
+    <!-- Left: Turn cards -->
+    <div class="panel">
+        <div class="panel-header">
+            <span class="panel-title">Turns</span>
+            <span class="count-badge" id="turns-count">0</span>
+        </div>
+        <div class="panel-scroll" id="turns-container">
+            <div class="empty">Waiting for game data…</div>
         </div>
     </div>
 
-    <div class="toggle-buttons">
-        <a href="?{% if game_id %}game_id={{ game_id }}&{% endif %}{% if not debug_mode %}debug=1{% endif %}{% if verbose_mode %}&verbose=1{% endif %}"
-           class="toggle-btn {% if debug_mode %}active{% endif %}">
-            🔍 Debug
-        </a>
-        <a href="?{% if game_id %}game_id={{ game_id }}&{% endif %}{% if debug_mode %}debug=1&{% endif %}{% if not verbose_mode %}verbose=1{% endif %}"
-           class="toggle-btn {% if verbose_mode %}active{% endif %}">
-            📋 Verbose
-        </a>
-    </div>
-
-    <!-- Tool Detail Modal -->
-    <div class="modal-overlay" id="toolModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>
-                    <span id="modalIcon"></span>
-                    <span id="modalToolName"></span>
-                </h3>
-                <button class="modal-close" onclick="closeModal()">&times;</button>
+    <!-- Right: Tools + Notifications -->
+    <div class="right-column">
+        <div class="panel half">
+            <div class="panel-header">
+                <span class="panel-title">Tools</span>
+                <span class="count-badge" id="tools-count">0</span>
             </div>
-            <div class="modal-body">
-                <div class="modal-section">
-                    <h4>Arguments</h4>
-                    <pre class="modal-json" id="modalArguments"></pre>
-                </div>
-                <div class="modal-section">
-                    <h4>Response</h4>
-                    <pre class="modal-json" id="modalResult"></pre>
-                </div>
+            <div class="panel-scroll" id="tools-container">
+                <div class="empty">No tool calls yet</div>
+            </div>
+        </div>
+        <div class="panel half">
+            <div class="panel-header">
+                <span class="panel-title" id="notifs-title">{{ 'Game Events' if verbose_mode else 'Notifications' }}</span>
+                <span class="count-badge" id="notifs-count">0</span>
+            </div>
+            <div class="panel-scroll" id="notifs-container">
+                <div class="empty">None yet</div>
             </div>
         </div>
     </div>
+</div>
 
-    <script>
-        // Tool data for modal
-        const toolData = {{ tool_calls_json|safe }};
+<!-- Toggle buttons -->
+<div class="toggle-buttons">
+    <a href="?{% if game_id %}game_id={{ game_id }}&{% endif %}{% if not debug_mode %}debug=1{% endif %}{% if verbose_mode %}&verbose=1{% endif %}"
+       class="toggle-btn {% if debug_mode %}active{% endif %}">🔍 Debug</a>
+    <a href="?{% if game_id %}game_id={{ game_id }}&{% endif %}{% if debug_mode %}debug=1&{% endif %}{% if not verbose_mode %}verbose=1{% endif %}"
+       class="toggle-btn {% if verbose_mode %}active{% endif %}">📋 Verbose</a>
+</div>
 
-        function openToolModal(index) {
-            const tool = toolData[index];
-            if (!tool) return;
+<!-- Tool modal -->
+<div class="modal-overlay" id="toolModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <div class="modal-title">
+                <span id="modalIcon"></span>
+                <span id="modalToolName"></span>
+            </div>
+            <button class="modal-close" onclick="closeModal()">×</button>
+        </div>
+        <div class="modal-body">
+            <div>
+                <div class="modal-section-label">Arguments</div>
+                <pre class="modal-json" id="modalArguments"></pre>
+            </div>
+            <div>
+                <div class="modal-section-label">Response</div>
+                <pre class="modal-json" id="modalResult"></pre>
+            </div>
+        </div>
+    </div>
+</div>
 
-            document.getElementById('modalIcon').textContent = tool.icon;
-            document.getElementById('modalToolName').textContent = tool.name;
+<script>
+    // ── Initial page data (server-rendered) ──
+    const PAGE_DATA = {{ page_data_json|safe }};
 
-            // Handle empty or null arguments/results
-            const args = tool.arguments || {};
-            const result = tool.result || {};
+    // ── Interaction state ──
+    const expandedTurns = new Set();
+    const briefingOpen  = new Set();
+    const fullMsgOpen   = new Set();
+    let toolData        = [];
+    let lastData        = PAGE_DATA;
+    const verboseMode   = PAGE_DATA.verbose_mode;
 
-            document.getElementById('modalArguments').textContent = JSON.stringify(args, null, 2);
+    // ── Helpers ──
+    function esc(s) {
+        if (s == null) return '';
+        const d = document.createElement('div');
+        d.textContent = String(s);
+        return d.innerHTML;
+    }
 
-            // Special handling for map results - display the ASCII map directly
-            if (result.map && typeof result.map === 'string') {
-                // Show map as pre-formatted text, then other fields as JSON
-                const { map, ...otherFields } = result;
-                let displayText = '=== ASCII Map ===\n\n' + map + '\n\n';
-                if (Object.keys(otherFields).length > 0) {
-                    displayText += '=== Other Data ===\n\n' + JSON.stringify(otherFields, null, 2);
+    function fmtTok(n) {
+        if (!n) return '';
+        return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+    }
+
+    // ── Turn grouping ──
+    // conversation is newest-first; tool_calls is newest-first
+    function buildTurnGroups(conversation, toolCalls) {
+        const map = new Map();
+
+        for (const msg of conversation) {
+            const t = msg.turn || 0;
+            if (!map.has(t)) {
+                map.set(t, {turn: t, messages: [], tools: [], tokenCount: 0,
+                            queryCount: 0, actionCount: 0, hasError: false});
+            }
+            if (msg.type !== 'turn_divider') {
+                map.get(t).messages.push(msg);
+                map.get(t).tokenCount += (msg.tokens || 0);
+            }
+        }
+
+        for (const tool of toolCalls) {
+            const t = tool.turn || 0;
+            if (!map.has(t)) {
+                map.set(t, {turn: t, messages: [], tools: [], tokenCount: 0,
+                            queryCount: 0, actionCount: 0, hasError: false});
+            }
+            const g = map.get(t);
+            g.tools.push(tool);
+            if (tool.category === 'query') g.queryCount++;
+            else if (tool.category === 'action') g.actionCount++;
+            if (!tool.ok) g.hasError = true;
+        }
+
+        return [...map.values()].sort((a, b) => b.turn - a.turn);
+    }
+
+    const ACTION_NAMES = new Set([
+        'move_unit', 'unit_found_city', 'unit_sleep', 'unit_skip',
+        'set_city_production', 'choose_tech', 'adopt_policy', 'send_action', 'end_turn',
+        'city_capture_decision', 'select_pantheon', 'found_religion', 'enhance_religion',
+    ]);
+
+    function renderTurnCard(group, isActive) {
+        const {turn, messages, tools, tokenCount, queryCount, actionCount, hasError} = group;
+        const isExpanded = expandedTurns.has(turn);
+
+        const parts = [];
+        if (queryCount)  parts.push(queryCount  + 'q');
+        if (actionCount) parts.push(actionCount + 'a');
+        const tok = fmtTok(tokenCount);
+        if (tok) parts.push(tok + ' tok');
+        const stats = parts.join(' · ');
+
+        const statusBadge = isActive
+            ? '<span class="badge active">active</span>'
+            : '<span class="badge done">done</span>';
+        const errBadge = hasError ? '<span class="badge error">err</span>' : '';
+        const caret = isExpanded ? '▼' : '▶';
+
+        let bodyHtml = '';
+        if (isExpanded) {
+            // messages within a turn are newest-first; reverse to display chronologically
+            const chrono = [...messages].reverse();
+            const userMsgs   = chrono.filter(m => m.role === 'user');
+            const assistMsgs = chrono.filter(m => m.role === 'assistant');
+
+            // User briefing (collapsible)
+            if (userMsgs.length > 0) {
+                const latest = userMsgs[userMsgs.length - 1];
+                const open   = briefingOpen.has(turn);
+                const arrow  = open ? '▾' : '▸';
+                const txt    = open
+                    ? `<div class="briefing-text">${esc(latest.content)}</div>`
+                    : '';
+                bodyHtml += `
+                    <div>
+                        <span class="briefing-toggle" onclick="toggleBriefing(event,${turn})">
+                            Turn briefing ${arrow}
+                        </span>${txt}
+                    </div>`;
+            }
+
+            // Assistant reasoning
+            for (let i = 0; i < assistMsgs.length; i++) {
+                const msg = assistMsgs[i];
+                if (!msg.content || !msg.content.trim()) continue;
+                const key  = turn + '_' + i;
+                const open = fullMsgOpen.has(key);
+                const LIM  = 500;
+                const long = msg.content.length > LIM;
+                const text = (long && !open) ? msg.content.slice(0, LIM) + '\u2026' : msg.content;
+                const more = (long && !open)
+                    ? `<span class="show-more" onclick="toggleFullMsg(event,'${key}')">[show more]</span>`
+                    : '';
+                const tok  = msg.tokens ? `<span class="tok-badge">${msg.tokens} tok</span>` : '';
+                bodyHtml += `
+                    <div>
+                        <div class="reasoning-label">assistant ${tok}</div>
+                        <div class="reasoning-text">${esc(text)}${more}</div>
+                    </div>`;
+            }
+
+            // Action pills
+            const actionTools = tools.filter(t => ACTION_NAMES.has(t.name));
+            if (actionTools.length > 0) {
+                const pills = actionTools.map(t => {
+                    const cls = t.name === 'end_turn' ? 'end_turn' : (t.ok ? 'ok' : 'err');
+                    return `<span class="action-pill ${cls}">${esc(t.name)}</span>`;
+                }).join('');
+                bodyHtml += `<div class="actions-row">${pills}</div>`;
+            }
+        }
+
+        return `
+            <div class="turn-card ${isExpanded ? 'expanded' : ''}" id="turn-card-${turn}">
+                <div class="turn-card-header" onclick="toggleTurn(event,${turn})">
+                    <span class="caret">${caret}</span>
+                    <span class="turn-num">TURN ${turn}</span>
+                    ${statusBadge}${errBadge}
+                    <span class="turn-stats">${esc(stats)}</span>
+                </div>
+                ${isExpanded ? `<div class="turn-card-body">${bodyHtml}</div>` : ''}
+            </div>`;
+    }
+
+    function renderTurns(data) {
+        const groups = buildTurnGroups(data.conversation, data.tool_calls);
+        document.getElementById('turns-count').textContent = groups.length;
+
+        // Auto-expand latest turn on first render
+        if (expandedTurns.size === 0 && groups.length > 0) {
+            expandedTurns.add(groups[0].turn);
+        }
+
+        const activeTurn = data.current_turn;
+        let html = '';
+        for (const g of groups) {
+            html += renderTurnCard(g, g.turn === activeTurn);
+        }
+
+        const container = document.getElementById('turns-container');
+        const scrollTop = container.scrollTop;
+        container.innerHTML = html || '<div class="empty">No turns yet — waiting for game data…</div>';
+        container.scrollTop = scrollTop;
+    }
+
+    function toggleTurn(e, turn) {
+        e.stopPropagation();
+        if (expandedTurns.has(turn)) expandedTurns.delete(turn);
+        else expandedTurns.add(turn);
+        renderTurns(lastData);
+    }
+
+    function toggleBriefing(e, turn) {
+        e.stopPropagation();
+        if (briefingOpen.has(turn)) briefingOpen.delete(turn);
+        else briefingOpen.add(turn);
+        renderTurns(lastData);
+    }
+
+    function toggleFullMsg(e, key) {
+        e.stopPropagation();
+        if (fullMsgOpen.has(key)) fullMsgOpen.delete(key);
+        else fullMsgOpen.add(key);
+        renderTurns(lastData);
+    }
+
+    // ── Tools panel ──
+    function renderTools(data) {
+        toolData = data.tool_calls;
+        document.getElementById('tools-count').textContent = toolData.length;
+        const container = document.getElementById('tools-container');
+        const scrollTop = container.scrollTop;
+
+        if (toolData.length === 0) {
+            container.innerHTML = '<div class="empty">No tool calls yet</div>';
+        } else {
+            let html = '';
+            let lastTurn = null;
+            for (let i = 0; i < toolData.length; i++) {
+                const tool = toolData[i];
+                if (tool.turn !== lastTurn) {
+                    html += `<div class="turn-group-label">T${tool.turn}</div>`;
+                    lastTurn = tool.turn;
                 }
-                document.getElementById('modalResult').textContent = displayText;
-            } else {
-                document.getElementById('modalResult').textContent = JSON.stringify(result, null, 2);
+                const errCls = tool.ok ? '' : 'error';
+                const resCls = tool.ok ? 'ok' : 'err';
+                const resHtml = tool.result_summary
+                    ? `<div class="tool-result ${resCls}">${esc(tool.result_summary)}</div>` : '';
+                html += `
+                    <div class="tool-item ${tool.category} ${errCls}" onclick="openToolModal(${i})">
+                        <span class="tool-icon">${tool.icon}</span>
+                        <span class="tool-name">${esc(tool.name)}</span>
+                        ${resHtml}
+                    </div>`;
             }
-
-            document.getElementById('toolModal').classList.add('visible');
+            container.innerHTML = html;
         }
+        container.scrollTop = scrollTop;
+    }
 
-        function closeModal() {
-            document.getElementById('toolModal').classList.remove('visible');
+    // ── Notifications / game events panel ──
+    function renderNotifs(data) {
+        const items = verboseMode ? data.game_events : data.notifications;
+        document.getElementById('notifs-count').textContent = items.length;
+        const container = document.getElementById('notifs-container');
+        const scrollTop = container.scrollTop;
+
+        if (items.length === 0) {
+            container.innerHTML = '<div class="empty">None yet</div>';
+        } else {
+            let html = '';
+            for (const item of items) {
+                const label = verboseMode ? item.event_type : item.summary;
+                html += `
+                    <div class="notif-item">
+                        <span class="notif-turn">T${item.turn}</span>
+                        <span class="notif-text">${esc(label)}</span>
+                    </div>`;
+            }
+            container.innerHTML = html;
         }
+        container.scrollTop = scrollTop;
+    }
 
-        // Close modal on escape key
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-                closeModal();
-            }
-        });
+    // ── Header update ──
+    function updateHeader(data) {
+        const dot = document.querySelector('.status-dot');
+        if (dot) dot.className = 'status-dot ' + (data.connected ? 'green' : 'red');
+        const td = document.querySelector('.turn-display');
+        if (td) td.textContent = data.current_turn || '—';
+        const cv = document.querySelector('.cost-val');
+        if (cv) cv.textContent = '$' + data.estimated_cost.toFixed(4);
+        const lu = document.querySelector('.last-update-text');
+        if (lu) lu.textContent = data.last_update;
+    }
 
-        // Close modal on overlay click
-        document.getElementById('toolModal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeModal();
-            }
-        });
+    // ── Full render ──
+    function renderAll(data) {
+        lastData = data;
+        updateHeader(data);
+        renderTurns(data);
+        renderTools(data);
+        renderNotifs(data);
+    }
 
-        // Auto-refresh without closing modals — driven by SSE push
-
-        function isModalOpen() {
-            return document.getElementById('toolModal').classList.contains('visible');
+    // ── Modal ──
+    function openToolModal(index) {
+        const tool = toolData[index];
+        if (!tool) return;
+        document.getElementById('modalIcon').textContent = tool.icon;
+        document.getElementById('modalToolName').textContent = tool.name;
+        const args   = tool.arguments || {};
+        const result = tool.result    || {};
+        document.getElementById('modalArguments').textContent = JSON.stringify(args, null, 2);
+        if (result.map && typeof result.map === 'string') {
+            const {map, ...rest} = result;
+            let txt = '=== ASCII Map ===\n\n' + map;
+            if (Object.keys(rest).length) txt += '\n\n=== Other Data ===\n\n' + JSON.stringify(rest, null, 2);
+            document.getElementById('modalResult').textContent = txt;
+        } else {
+            document.getElementById('modalResult').textContent = JSON.stringify(result, null, 2);
         }
+        document.getElementById('toolModal').classList.add('visible');
+    }
 
-        function updateHeader(data) {
-            // Update connection status
-            const dot = document.querySelector('.dot');
-            const statusText = dot.parentElement.childNodes[2];
-            if (data.connected) {
-                dot.className = 'dot green';
-                statusText.textContent = 'Connected';
-            } else {
-                dot.className = 'dot red';
-                statusText.textContent = 'Disconnected';
-            }
+    function closeModal() {
+        document.getElementById('toolModal').classList.remove('visible');
+    }
 
-            // Update turn display
-            const turnDisplay = document.querySelector('.turn-display');
-            if (turnDisplay) {
-                turnDisplay.textContent = data.current_turn || '—';
-            }
+    function isModalOpen() {
+        return document.getElementById('toolModal').classList.contains('visible');
+    }
 
-            // Update last update time
-            const timeElements = document.querySelectorAll('.status-item');
-            const lastElement = timeElements[timeElements.length - 1];
-            if (lastElement) {
-                lastElement.textContent = data.last_update;
-            }
-        }
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+    document.getElementById('toolModal').addEventListener('click', e => {
+        if (e.target === document.getElementById('toolModal')) closeModal();
+    });
 
-        function updateStats(data) {
-            const statsBar = document.querySelector('.stats-bar');
-            if (statsBar) {
-                const tokens = data.total_tokens.toLocaleString();
-                const requests = data.total_requests;
-                const cost = data.estimated_cost.toFixed(4);
-                statsBar.innerHTML = `
-                    <span><span class="stat">${tokens}</span><span class="stat-label">tokens</span></span>
-                    <span><span class="stat">${requests}</span><span class="stat-label">requests</span></span>
-                    <span><span class="stat">$${cost}</span><span class="stat-label">est cost</span></span>
-                `;
-            }
-        }
+    // ── SSE ──
+    const params = new URLSearchParams(window.location.search);
+    const evtSource = new EventSource('/api/stream?' + params.toString());
+    evtSource.addEventListener('update', e => {
+        if (isModalOpen()) return;
+        try { renderAll(JSON.parse(e.data)); }
+        catch (err) { console.error('SSE parse error:', err); }
+    });
+    evtSource.onerror = () => console.warn('SSE connection lost, reconnecting…');
 
-        function updateConversation(data) {
-            const conversationPanel = document.querySelector('.panel');
-            if (!conversationPanel) return;
-
-            const countBadge = conversationPanel.querySelector('.count-badge');
-            if (countBadge) {
-                countBadge.textContent = data.conversation.length;
-            }
-
-            // Save scroll position
-            const scrollPos = conversationPanel.scrollTop;
-            const wasAtBottom = scrollPos + conversationPanel.clientHeight >= conversationPanel.scrollHeight - 50;
-
-            // Find the conversation container
-            const conversationContainer = conversationPanel.querySelector('.conversation-messages');
-            if (!conversationContainer) return;
-
-            if (data.conversation.length === 0) {
-                conversationContainer.innerHTML = '<div class="empty">No conversation yet — waiting for LLM activity</div>';
-            } else {
-                let html = '';
-                for (const msg of data.conversation) {
-                    if (msg.type === 'turn_divider') {
-                        html += `<div class="turn-divider">TURN ${msg.turn}</div>`;
-                    } else {
-                        const tokens = msg.tokens ? `<span class="tokens">${msg.tokens} tok</span>` : '';
-                        html += `
-                            <div class="chat-message ${msg.role}">
-                                <div class="role">${msg.role}${tokens}</div>
-                                <div class="content">${escapeHtml(msg.content)}</div>
-                            </div>
-                        `;
-                    }
-                }
-                conversationContainer.innerHTML = html;
-            }
-
-            // Restore scroll (or scroll to bottom if was at bottom)
-            if (wasAtBottom) {
-                conversationPanel.scrollTop = conversationPanel.scrollHeight;
-            } else {
-                conversationPanel.scrollTop = scrollPos;
-            }
-        }
-
-        function updateToolCalls(data) {
-            const toolPanel = document.querySelector('.panel.half');
-            if (!toolPanel) return;
-
-            const countBadge = toolPanel.querySelector('.count-badge');
-            if (countBadge) {
-                countBadge.textContent = data.tool_calls.length;
-            }
-
-            // Update global toolData for modal
-            toolData.length = 0;
-            toolData.push(...data.tool_calls);
-
-            // Save scroll position
-            const scrollPos = toolPanel.scrollTop;
-
-            // Find container
-            const container = toolPanel.querySelector('.tool-calls-container');
-            if (!container) return;
-
-            if (data.tool_calls.length === 0) {
-                container.innerHTML = '<div class="empty">No tool calls yet</div>';
-            } else {
-                let html = '';
-                for (let i = 0; i < data.tool_calls.length; i++) {
-                    const tool = data.tool_calls[i];
-                    const errorClass = tool.ok ? '' : 'error';
-                    const resultClass = tool.ok ? 'success' : 'error';
-                    const resultHtml = tool.result_summary ?
-                        `<div class="tool-call-result ${resultClass}">${escapeHtml(tool.result_summary)}</div>` : '';
-
-                    html += `
-                        <div class="tool-call ${tool.category} ${errorClass}" onclick="openToolModal(${i})">
-                            <div class="tool-call-header">
-                                <span class="icon">${tool.icon}</span>
-                                <span class="name">${escapeHtml(tool.name)}</span>
-                                <span class="turn-badge">T${tool.turn}</span>
-                            </div>
-                            ${resultHtml}
-                        </div>
-                    `;
-                }
-                container.innerHTML = html;
-            }
-
-            // Restore scroll position
-            toolPanel.scrollTop = scrollPos;
-        }
-
-        function updateRightPanel(data) {
-            const panels = document.querySelectorAll('.panel.half');
-            const rightPanel = panels.length > 1 ? panels[1] : null;
-            if (!rightPanel) return;
-
-            const heading = rightPanel.querySelector('h2');
-            const countBadge = rightPanel.querySelector('.count-badge');
-
-            // Save scroll position
-            const scrollPos = rightPanel.scrollTop;
-
-            if (data.verbose_mode) {
-                // Update game events
-                heading.childNodes[0].textContent = 'Game Events ';
-                if (countBadge) countBadge.textContent = data.game_events.length;
-
-                const container = rightPanel.querySelector('.events-container');
-                if (!container) return;
-
-                if (data.game_events.length === 0) {
-                    container.innerHTML = '<div class="empty">No game events yet</div>';
-                } else {
-                    let html = '';
-                    for (const event of data.game_events) {
-                        html += `
-                            <div class="game-event">
-                                <div class="event-type">${escapeHtml(event.event_type)}</div>
-                                <div class="event-content">${escapeHtml(event.content)}</div>
-                            </div>
-                        `;
-                    }
-                    container.innerHTML = html;
-                }
-            } else {
-                // Update notifications
-                heading.childNodes[0].textContent = 'Notifications ';
-                if (countBadge) countBadge.textContent = data.notifications.length;
-
-                const container = rightPanel.querySelector('.notifications-container');
-                if (!container) return;
-
-                if (data.notifications.length === 0) {
-                    container.innerHTML = '<div class="empty">No notifications yet</div>';
-                } else {
-                    let html = '';
-                    for (const notif of data.notifications) {
-                        const messageHtml = notif.message && notif.message !== notif.summary ?
-                            `<div class="message">${escapeHtml(notif.message)}</div>` : '';
-                        html += `
-                            <div class="notification">
-                                <div class="summary">${escapeHtml(notif.summary)}</div>
-                                ${messageHtml}
-                                <div class="meta">
-                                    <span>T${notif.turn}</span>
-                                    <span>Type ${notif.notif_type}</span>
-                                </div>
-                            </div>
-                        `;
-                    }
-                    container.innerHTML = html;
-                }
-            }
-
-            // Restore scroll position
-            rightPanel.scrollTop = scrollPos;
-        }
-
-        function updateDebugPanel(data) {
-            // This would be complex to update - skip for now since debug mode is rare
-            // User can refresh page manually if needed
-        }
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        // Subscribe to SSE push stream — replaces setInterval polling
-        const params = new URLSearchParams(window.location.search);
-        const evtSource = new EventSource('/api/stream?' + params.toString());
-
-        evtSource.addEventListener('update', (e) => {
-            if (isModalOpen()) return;
-            try {
-                const data = JSON.parse(e.data);
-                updateHeader(data);
-                updateStats(data);
-                updateConversation(data);
-                updateToolCalls(data);
-                updateRightPanel(data);
-                if (data.debug_mode && data.debug) updateDebugPanel(data);
-            } catch (err) {
-                console.error('SSE parse error:', err);
-            }
-        });
-
-        evtSource.onerror = () => {
-            console.warn('SSE connection lost, browser will auto-reconnect...');
-        };
-    </script>
+    // ── Initial render ──
+    renderAll(PAGE_DATA);
+</script>
 </body>
 </html>
 """
@@ -1919,7 +1505,7 @@ def parse_logs(debug_mode: bool = False, verbose_mode: bool = False, game_id: in
     data["game_events"] = list(reversed(game_events))
     data["notifications"] = list(reversed(notifications))
 
-    # Create JSON-safe version of tool_calls for modal
+    # Create JSON-safe version of tool_calls for backward compat
     data["tool_calls_json"] = json.dumps(data["tool_calls"])
 
     # Estimate cost (rough: $0.001 per 1K tokens for cheap models)
@@ -1940,6 +1526,8 @@ def dashboard():
     game_id_str = request.args.get("game_id")
     game_id = int(game_id_str) if game_id_str else None
     data = parse_logs(debug_mode=debug_mode, verbose_mode=verbose_mode, game_id=game_id)
+    # Build page_data_json for initial JS render (excludes tool_calls_json to avoid redundancy)
+    data["page_data_json"] = json.dumps({k: v for k, v in data.items() if k not in ("tool_calls_json",)})
     return render_template_string(TEMPLATE, **data)
 
 
