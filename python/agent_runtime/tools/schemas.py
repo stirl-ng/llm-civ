@@ -116,7 +116,65 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_current_turn",
+            "description": "Returns the current turn number.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_log",
+            "description": "Returns recent game log entries with optional filters.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message_type": {
+                        "type": "string",
+                        "description": "Filter by message type (e.g. 'turn_start', 'notification')",
+                    },
+                    "direction": {
+                        "type": "string",
+                        "enum": ["incoming", "outgoing"],
+                        "description": "Filter by message direction",
+                    },
+                    "turn_number": {
+                        "type": "integer",
+                        "description": "Filter by turn number",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of entries to return. Default: 100, max: 1000",
+                    },
+                    "current_game_only": {
+                        "type": "boolean",
+                        "description": "Only return entries from the current game. Default: true",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
     # === Spatial Awareness Tools ===
+    {
+        "type": "function",
+        "function": {
+            "name": "get_visible_tiles",
+            "description": "Get raw tile data for all revealed tiles. Prefer get_map_view for visual overview.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
@@ -446,6 +504,32 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     },
                 },
                 "required": ["religion_id", "founder_belief_id", "follower_belief_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "city_capture_decision",
+            "description": "Make a decision about a captured city: puppet, annex, raze, destroy, or liberate.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "city_id": {
+                        "type": "integer",
+                        "description": "ID of the captured city",
+                    },
+                    "action": {
+                        "type": "string",
+                        "enum": ["puppet", "annex", "raze", "destroy", "liberate"],
+                        "description": "What to do with the city",
+                    },
+                    "liberate_to": {
+                        "type": "integer",
+                        "description": "Player ID to liberate the city to (required when action is 'liberate')",
+                    },
+                },
+                "required": ["city_id", "action"],
             },
         },
     },
