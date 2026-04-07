@@ -43,13 +43,13 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "get_city_production",
-            "description": "Get available production options (units, buildings, wonders, processes) for a specific city.",
+            "description": "Get available production options (units, buildings, wonders, processes) for a specific city. Returns item IDs needed for set_city_production.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "city_id": {
                         "type": "integer",
-                        "description": "ID of the city to query",
+                        "description": "ID of the city. Must come from get_cities results — never guess.",
                     },
                 },
                 "required": ["city_id"],
@@ -206,7 +206,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "properties": {
                     "unit_id": {
                         "type": "integer",
-                        "description": "ID of the unit to check movement for",
+                        "description": "ID of the unit. Must come from get_units results — never guess.",
                     },
                 },
                 "required": ["unit_id"],
@@ -223,7 +223,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "properties": {
                     "unit_id": {
                         "type": "integer",
-                        "description": "ID of the worker/builder unit",
+                        "description": "ID of the worker/builder unit. Must come from get_units results — never guess.",
                     },
                     "radius": {
                         "type": "integer",
@@ -335,7 +335,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "send_action",
-            "description": "Send a unit action command. Use for move_unit, unit_found_city, unit_alert, unit_sleep, unit_skip.",
+            "description": "Send a unit action command. Use for move_unit, unit_found_city, unit_alert, unit_sleep, unit_skip. Always call get_units first to get current unit IDs — never guess them.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -350,7 +350,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                             },
                             "unit_id": {
                                 "type": "integer",
-                                "description": "ID of the unit to command",
+                                "description": "ID of the unit to command. Must come from get_units results — never guess.",
                             },
                             "to": {
                                 "type": "array",
@@ -369,22 +369,21 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "set_city_production",
-            "description": "Set what a city should produce.",
+            "description": "Set what a city should produce. Always call get_city_production first to see available options and their IDs.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "city_id": {
                         "type": "integer",
-                        "description": "ID of the city",
+                        "description": "ID of the city. Must come from get_cities results — never guess.",
                     },
                     "order_type": {
                         "type": "integer",
-                        "enum": [0, 1, 2, 3],
-                        "description": "0=unit, 1=building, 2=wonder, 3=process",
+                        "description": "Production type: 0=unit, 1=building, 2=wonder, 3=process",
                     },
                     "item_id": {
                         "type": "integer",
-                        "description": "ID of the unit/building/wonder/process to produce",
+                        "description": "ID from get_city_production results. Never guess — always call get_city_production first.",
                     },
                 },
                 "required": ["city_id", "order_type", "item_id"],
