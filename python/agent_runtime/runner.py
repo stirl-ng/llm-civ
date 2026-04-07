@@ -7,9 +7,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 from pathlib import Path
 from typing import Any
+
+# Windows cp1252 stdout breaks on Unicode chars; force UTF-8
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if sys.stderr.encoding and sys.stderr.encoding.lower() != "utf-8":
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 import requests
 import yaml
@@ -219,6 +226,7 @@ def run_turn(
     iterations = 0
     tool_calls_total = 0
     reflection_done = False
+    silent_streak = 0
 
     print(f"  Starting turn {turn}...")
 
@@ -232,7 +240,7 @@ def run_turn(
 
     while True:
         if timeout is not None and time.time() - start_time >= timeout:
-            print(f"  ⚠️  Turn timeout ({timeout}s)")
+            print(f"  [!] Turn timeout ({timeout}s)")
             break
 
         iterations += 1
@@ -240,22 +248,24 @@ def run_turn(
         try:
             response = model.generate(messages, tools=tools, temperature=temperature)
             preview = response.text[:150] + "..." if len(response.text) > 150 else response.text
-            if preview:
-                print(f"  [{iterations}] LLM: {preview}")
+            print(f"  [{iterations}] LLM: {preview or '(no text)'}")
             if response.tool_calls:
                 print(f"  [{iterations}] Tool calls: {[tc.name for tc in response.tool_calls]}")
         except Exception as e:
-            print(f"  ✗ LLM error: {e}")
+            print(f"  [x] LLM error: {e}")
             break
 
         messages.append(build_assistant_message(response))
 
         if not response.tool_calls:
-            if iterations >= 3:
-                print(f"  ⚠️  No tool calls after {iterations} iterations")
+            silent_streak += 1
+            if silent_streak >= 3:
+                print(f"  [!] No tool calls after {silent_streak} consecutive silent iterations")
                 break
             messages.append({"role": "user", "content": "Please call a tool or end_turn when ready."})
             continue
+
+        silent_streak = 0
 
         if interactive and iterations > 1:
             mid_turn_msg = prompt_operator(turn, iterations)
@@ -268,7 +278,7 @@ def run_turn(
 
             try:
                 if tool_call.name in ("end_turn", "force_end_turn") and not reflection_done:
-                    print(f"    ↩ {tool_call.name} intercepted — prompting reflection")
+                    print(f"    [<] {tool_call.name} intercepted -- prompting reflection")
                     result = {
                         "ok": True,
                         "message": "Before ending your turn, please reflect. See the message below.",
@@ -280,19 +290,19 @@ def run_turn(
 
                 result = execute_tool(tool_call, base_url, turn, game_id=game_id)
                 is_ok = result.get("ok", True)
-                print(f"    {'✓' if is_ok else '✗'} {tool_call.name}")
+                print(f"    {'[ok]' if is_ok else '[x]'} {tool_call.name}")
                 messages.append(build_tool_result_message(tool_call, result))
 
                 if result.get("_end_turn"):
                     if not is_ok:
                         error = result.get("blocking_type") or result.get("message") or "blocked"
-                        print(f"    ⚠️  end_turn blocked: {error}")
+                        print(f"    [!] end_turn blocked: {error}")
                     else:
-                        print(f"  ✓ Turn {turn} ended")
+                        print(f"  [ok] Turn {turn} ended")
                         return {"turn": turn, "iterations": iterations, "tool_calls": tool_calls_total, "success": True}
 
             except Exception as e:
-                print(f"    ✗ {tool_call.name}: {e}")
+                print(f"    [x] {tool_call.name}: {e}")
                 messages.append(build_tool_result_message(
                     tool_call,
                     {"ok": False, "error": str(e)}
