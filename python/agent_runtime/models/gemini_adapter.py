@@ -101,7 +101,7 @@ class GeminiChat(ModelAdapter):
 
         # Process response parts
         if response.candidates and response.candidates[0].content:
-            for part in response.candidates[0].content.parts:
+            for part in (response.candidates[0].content.parts or []):
                 if hasattr(part, "text") and part.text:
                     text += part.text
                 elif hasattr(part, "function_call") and part.function_call:
@@ -167,7 +167,7 @@ class GeminiChat(ModelAdapter):
             if role == "user":
                 contents.append(self._types.Content(
                     role="user",
-                    parts=[self._types.Part.from_text(content)],
+                    parts=[self._types.Part.from_text(text=content)],
                 ))
                 i += 1
 
@@ -175,7 +175,7 @@ class GeminiChat(ModelAdapter):
                 parts = []
                 # Add text if present
                 if content:
-                    parts.append(self._types.Part.from_text(content))
+                    parts.append(self._types.Part.from_text(text=content))
 
                 # Add function calls if present
                 if msg.get("tool_calls"):
@@ -214,7 +214,7 @@ class GeminiChat(ModelAdapter):
                 # Unknown role, treat as user
                 contents.append(self._types.Content(
                     role="user",
-                    parts=[self._types.Part.from_text(content)],
+                    parts=[self._types.Part.from_text(text=content)],
                 ))
                 i += 1
 
