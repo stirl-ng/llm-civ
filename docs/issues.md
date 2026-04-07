@@ -89,3 +89,8 @@ See `docs/prompt-design.md`. For games > ~50 turns, accumulated context will ove
 
 ## unit-actions.md accuracy unverified
 `docs/unit-actions.md` documents response schemas (e.g., `state_delta` fields) that may not match current DLL output. Verify against live DLL responses before relying on it.
+
+---
+
+## Per-tile yields missing from get_map_view
+`get_visible_tiles` (C++) does not emit yield data per tile. `get_map_view` therefore cannot include `yields: {food, production, gold, ...}` in the `tiles` JSON it returns. To fix: extend the `get_visible_tiles` handler in `CvGame.cpp` to compute and emit yields for each plot (using `pPlot->calculateYield()` or similar), then surface them in the `tiles` array in `mcp_server._get_map_view`.
