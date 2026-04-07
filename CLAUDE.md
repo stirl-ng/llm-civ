@@ -48,6 +48,18 @@ Commit often — after each logical change, not just at the end of a session. Ea
 
 **Lua naming:** timer constants `AUTO_CLOSE_SECONDS`, timer variables `g_autoCloseTimer`, initial state tracking `g_initialXxx`.
 
+## Runtime Logs
+
+When the system is launched via `python launch.py`, all process output is captured to `python/logs/`:
+
+| File | Contents |
+|---|---|
+| `python/logs/orchestrator.log` | Orchestrator stdout + Python logging (both formats, interleaved) |
+| `python/logs/runner_{config}.log` | Agent runner stdout — LLM responses, tool calls, errors |
+| `python/logs/game_{game_id}.jsonl` | Per-game JSONL message log (incoming DLL events + outgoing tool calls) |
+
+Check these first when debugging. The runner log shows LLM errors directly; the orchestrator log shows pipe/SSE events; the JSONL shows the full message trace.
+
 ## Gotchas
 
 - `game_id` = `CvPreGame::mapRandomSeed()` — not sequential, changes each new game load.
