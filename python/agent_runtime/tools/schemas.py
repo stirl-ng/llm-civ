@@ -179,7 +179,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "get_map_view",
-            "description": "ESSENTIAL: Get ASCII map showing terrain, units, cities, resources around a location. Use frequently to understand the world before moving units or making decisions.",
+            "description": "ESSENTIAL: Get ASCII map + structured tile data around a location. Returns 'map' (ASCII with legend) and 'tiles' (array of objects with x, y, terrain, feature, resource, improvement, route, territory_owner, units, city per tile). Use frequently before moving units or making decisions.",
             "parameters": {
                 "type": "object",
                 "properties": {

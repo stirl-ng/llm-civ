@@ -802,7 +802,7 @@ class CivMCPServer:
 
         # Render map
         from .map_renderer import render_map
-        from .map_legend import generate_legend_text
+        from .map_legend import generate_legend_text, TERRAIN_ABBREVS, FEATURE_PREFIX_NAMES, FEATURE_SOLO
 
         grid_str, seen = render_map(
             tiles=tiles,
@@ -826,10 +826,106 @@ class CivMCPServer:
         legend_str = generate_legend_text(seen) if show_legend else ""
         map_with_legend = header + legend_str + ("\n\n" if legend_str else "") + grid_str
 
+        # Build structured tile JSON — same viewport as the ASCII map
+        _ROUTE_NAMES = {0: "Road", 1: "Railroad"}
+
+        if center:
+            viewport_tiles = [
+                t for t in tiles
+                if abs(t["x"] - center[0]) <= radius and abs(t["y"] - center[1]) <= radius
+            ]
+        else:
+            viewport_tiles = tiles
+
+        units_by_xy: dict[tuple, list] = {}
+        for u in viewport_units:
+            units_by_xy.setdefault((u["x"], u["y"]), []).append(u)
+
+        cities_by_xy: dict[tuple, dict] = {(c["x"], c["y"]): c for c in viewport_cities}
+
+        tiles_json = []
+        for t in viewport_tiles:
+            tx, ty = t["x"], t["y"]
+            entry: dict[str, Any] = {"x": tx, "y": ty}
+
+            # Terrain
+            terrain_type = t.get("terrain_type", 0)
+            _, tname = TERRAIN_ABBREVS.get(terrain_type, (None, "Unknown"))
+            if t.get("is_mountain"):
+                entry["terrain"] = "Mountain"
+            elif t.get("is_water"):
+                entry["terrain"] = "Ocean"
+            elif t.get("is_hills"):
+                entry["terrain"] = f"Hills ({tname})"
+            else:
+                entry["terrain"] = tname
+
+            # Feature
+            feature_type = t.get("feature_type", -1)
+            if feature_type in FEATURE_PREFIX_NAMES:
+                entry["feature"] = FEATURE_PREFIX_NAMES[feature_type]
+            elif feature_type in FEATURE_SOLO:
+                entry["feature"] = FEATURE_SOLO[feature_type][1]
+
+            # Flags (only include if true to keep output compact)
+            if t.get("is_river"):
+                entry["is_river"] = True
+            if not t.get("is_visible", True):
+                entry["is_fog"] = True
+
+            # Resource
+            if "resource_name" in t:
+                entry["resource"] = t["resource_name"]
+                if t.get("resource_quantity", 1) > 1:
+                    entry["resource_quantity"] = t["resource_quantity"]
+
+            # Improvement
+            if "improvement_name" in t:
+                entry["improvement"] = t["improvement_name"]
+                if t.get("improvement_pillaged"):
+                    entry["improvement_pillaged"] = True
+
+            # Route
+            if "route_type" in t:
+                entry["route"] = _ROUTE_NAMES.get(t["route_type"], f"Route{t['route_type']}")
+                if t.get("route_pillaged"):
+                    entry["route_pillaged"] = True
+
+            # Territory
+            if "owner_id" in t:
+                entry["territory_owner"] = t["owner_id"]
+
+            # Units on this tile (our units only — get_units is player-scoped)
+            tile_units = units_by_xy.get((tx, ty))
+            if tile_units:
+                entry["units"] = [
+                    {
+                        "id": u["id"],
+                        "type": u.get("unit_type_name", "Unknown"),
+                        "moves_remaining": u.get("moves_remaining", 0),
+                        "damage": u.get("damage", 0),
+                        "can_move": u.get("can_move", False),
+                    }
+                    for u in tile_units
+                ]
+
+            # City on this tile
+            city = cities_by_xy.get((tx, ty))
+            if city:
+                entry["city"] = {
+                    "id": city.get("id"),
+                    "name": city.get("name"),
+                    "is_capital": city.get("is_capital", False),
+                    "is_ours": city.get("is_ours", True),
+                }
+
+            tiles_json.append(entry)
+
         return {
             "success": True,
-            "map": map_with_legend,   # legend + grid — what the LLM sees
-            "map_raw": grid_str,      # grid only — for dashboard inline display
+            "map": map_with_legend,   # ASCII legend + grid
+            "map_raw": grid_str,      # grid only — for dashboard display
+            "tiles": tiles_json,      # structured tile data for analysis
             "center": center,
             "radius": radius,
             "turn": turn,
