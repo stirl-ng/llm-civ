@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
 """Launch orchestrator + agent runners.
 
-On Windows: opens a separate cmd window per process.
+On Windows: background processes logging to files. Stop with: python launch.py stop
 On Linux/Mac: uses a tmux session.
 
 Usage:
   python launch.py                  # interactive config selection
   python launch.py gemini           # single runner, no prompt
   python launch.py gemini openai    # two runners
+  python launch.py stop             # kill previously launched processes (Windows)
 """
 import subprocess
 import sys
 from pathlib import Path
 
 CONFIGS_DIR = Path(__file__).parent / "configs" / "experiments"
+LOGS_DIR = Path(__file__).parent / "logs"
+PID_FILE = LOGS_DIR / "pids.txt"
 SESSION = "civ"
 
 
@@ -46,21 +49,46 @@ def pick_configs() -> list[str]:
 # ── Windows launcher ──────────────────────────────────────────────────────────
 
 def launch_windows(configs: list[str]) -> None:
-    python_dir = Path(sys.executable).parent
+    python_exe = str(Path(sys.executable))
     here = Path(__file__).parent
+    LOGS_DIR.mkdir(exist_ok=True)
 
-    def start(title: str, cmd: str) -> None:
-        # `start` requires shell=True on Windows
-        subprocess.Popen(
-            f'start "{title}" cmd /k "cd /d {here} && {cmd}"',
-            shell=True,
+    pids = []
+
+    def start(label: str, args: list[str], log_path: Path) -> None:
+        log_f = open(log_path, "w", buffering=1)
+        proc = subprocess.Popen(
+            args,
+            stdout=log_f,
+            stderr=log_f,
+            cwd=here,
         )
+        pids.append((label, proc.pid))
+        print(f"  {label} (pid {proc.pid}) → {log_path}")
 
-    start("orchestrator", f'"{python_dir}\\python.exe" -m orchestrator')
+    start("orchestrator", [python_exe, "-u", "-m", "orchestrator"], LOGS_DIR / "orchestrator.log")
     for cfg in configs:
-        start(f"agent-{cfg}", f'"{python_dir}\\python.exe" -m agent_runtime --config {cfg}')
+        start(f"agent-{cfg}", [python_exe, "-u", "-m", "agent_runtime", "--config", cfg], LOGS_DIR / f"runner_{cfg}.log")
 
-    print("Launched in separate windows.")
+    PID_FILE.write_text("\n".join(f"{pid} {label}" for label, pid in pids))
+    print(f"\nStop with: python launch.py stop")
+
+
+def stop_windows() -> None:
+    if not PID_FILE.exists():
+        print("No pid file found — nothing to stop.")
+        return
+    for line in PID_FILE.read_text().splitlines():
+        parts = line.split(None, 1)
+        if not parts:
+            continue
+        pid, label = parts[0], parts[1] if len(parts) > 1 else "?"
+        result = subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True, text=True)
+        if result.returncode == 0:
+            print(f"  Killed {label} (pid {pid})")
+        else:
+            print(f"  {label} (pid {pid}): {result.stderr.strip() or 'already gone'}")
+    PID_FILE.unlink(missing_ok=True)
 
 
 # ── tmux launcher ─────────────────────────────────────────────────────────────
@@ -99,6 +127,13 @@ def launch_tmux(configs: list[str]) -> None:
 # ── entry point ───────────────────────────────────────────────────────────────
 
 def main() -> None:
+    if sys.argv[1:] == ["stop"]:
+        if sys.platform == "win32":
+            stop_windows()
+        else:
+            print("Use: tmux kill-session -t civ")
+        return
+
     configs = sys.argv[1:] or pick_configs()
     if not configs:
         print("No configs selected.")
@@ -111,6 +146,9 @@ def main() -> None:
 
     print(f"Launching: orchestrator + {configs}")
     if sys.platform == "win32":
+        if PID_FILE.exists():
+            print("Stopping previous session...")
+            stop_windows()
         launch_windows(configs)
     else:
         launch_tmux(configs)
