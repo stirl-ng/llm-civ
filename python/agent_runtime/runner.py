@@ -247,8 +247,7 @@ def run_turn(
 
         try:
             response = model.generate(messages, tools=tools, temperature=temperature)
-            preview = response.text[:150] + "..." if len(response.text) > 150 else response.text
-            print(f"  [{iterations}] LLM: {preview or '(no text)'}")
+            print(f"  [{iterations}] LLM: {response.text or '(no text)'}")
             if response.tool_calls:
                 print(f"  [{iterations}] Tool calls: {[tc.name for tc in response.tool_calls]}")
         except Exception as e:
@@ -290,7 +289,15 @@ def run_turn(
 
                 result = execute_tool(tool_call, base_url, turn, game_id=game_id)
                 is_ok = result.get("ok", True)
-                print(f"    {'[ok]' if is_ok else '[x]'} {tool_call.name}")
+                print(f"    {'[ok]' if is_ok else '[x]'} {tool_call.name}: {json.dumps(result)}")
+                if _message_logger:
+                    _message_logger.log({
+                        "type": "tool_result",
+                        "tool": tool_call.name,
+                        "arguments": tool_call.arguments,
+                        "result": result,
+                        "ok": is_ok,
+                    }, direction="incoming")
                 messages.append(build_tool_result_message(tool_call, result))
 
                 if result.get("_end_turn"):

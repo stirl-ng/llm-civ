@@ -215,9 +215,7 @@ class MessageLogger:
         messages: list[dict[str, Any]],
         **kwargs: Any
     ) -> str:
-        """Log an LLM API request (convenience method).
-
-        Only logs the latest message to keep logs compact.
+        """Log an LLM API request with full conversation context.
 
         Args:
             model: Model name
@@ -227,12 +225,11 @@ class MessageLogger:
         Returns:
             UUID for correlating with response
         """
-        latest_message = messages[-1] if messages else {}
-
         return self.log({
             "type": "llm_request",
             "model": model,
-            "latest_message": latest_message,
+            "messages": messages,
+            "message_count": len(messages),
             **kwargs,
         }, direction="outgoing")
 
