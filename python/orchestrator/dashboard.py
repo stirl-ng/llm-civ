@@ -386,15 +386,25 @@ def parse_logs(debug_mode: bool = False, game_id: int | None = None) -> dict[str
 
         # === CONVERSATION MESSAGES ===
 
-        # Turn start - system prompt only (briefing comes via llm_request)
+        # Turn start - system prompt + briefing
         if msg_type == "turn_start_messages":
             system_prompt = msg.get("system_prompt", "")
+            briefing = msg.get("briefing", "")
 
             if system_prompt:
                 conversation.append({
                     "type": "message",
                     "role": "system",
                     "content": system_prompt,
+                    "turn": turn or 0,
+                    "tokens": 0,
+                })
+
+            if briefing:
+                conversation.append({
+                    "type": "message",
+                    "role": "user",
+                    "content": briefing,
                     "turn": turn or 0,
                     "tokens": 0,
                 })

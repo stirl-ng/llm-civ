@@ -43,7 +43,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "get_city_production",
-            "description": "Get available production options (units, buildings, wonders, processes) for a specific city. Returns item IDs needed for set_city_production.",
+            "description": "Get available production options (units, buildings, wonders, processes) for a specific city. Returns item IDs needed for set_city_production. Also returns current_production (what is already being built, or null). Do not call set_city_production unless you intend to replace the current production.",
             "parameters": {
                 "type": "object",
                 "properties": {

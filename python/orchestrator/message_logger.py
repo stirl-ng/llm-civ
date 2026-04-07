@@ -213,42 +213,32 @@ class MessageLogger:
         self,
         model: str,
         messages: list[dict[str, Any]],
-        **kwargs: Any
+        temperature: float | None = None,
+        tools: list[str] | None = None,
     ) -> str:
-        """Log an LLM API request with full conversation context.
-
-        Args:
-            model: Model name
-            messages: Full conversation history
-            **kwargs: Additional params (temperature, etc.)
-
-        Returns:
-            UUID for correlating with response
-        """
+        """Log an outgoing LLM request. Returns the UUID for pairing with the response."""
+        latest = messages[-1] if messages else {}
         return self.log({
             "type": "llm_request",
             "model": model,
-            "messages": messages,
-            "message_count": len(messages),
-            **kwargs,
+            "latest_message": {"role": latest.get("role", ""), "content": latest.get("content", "")},
+            "temperature": temperature,
+            "tools": tools,
         }, direction="outgoing")
 
-    def log_llm_response(self, request_uuid: str, response: str, **kwargs: Any) -> str:
-        """Log an LLM API response (convenience method).
-
-        Args:
-            request_uuid: UUID of corresponding request
-            response: Response text from LLM
-            **kwargs: Additional metadata
-
-        Returns:
-            UUID of response log entry
-        """
+    def log_llm_response(
+        self,
+        request_uuid: str,
+        response: str,
+        total_tokens: int | None = None,
+        **kwargs: Any,
+    ) -> str:
+        """Log an incoming LLM response."""
         return self.log({
             "type": "llm_response",
             "request_uuid": request_uuid,
             "response": response,
-            **kwargs,
+            "total_tokens": total_tokens,
         }, direction="incoming")
 
     def query(
