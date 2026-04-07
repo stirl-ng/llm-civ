@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import uuid
 from typing import Any, Dict, List, Optional
 
@@ -84,16 +85,34 @@ class GeminiChat(ModelAdapter):
         if tools:
             gemini_tools = self._convert_tools(tools)
 
-        # Make API call
-        response = self._client.models.generate_content(
-            model=self._model_name,
-            contents=contents,
-            config=self._types.GenerateContentConfig(
-                temperature=temperature,
-                system_instruction=system_instruction,
-                tools=gemini_tools,
-            ),
+        # Make API call with exponential backoff for transient errors (503, etc.).
+        # Retries for up to 5 minutes; backoff caps at 60s and holds there.
+        generate_config = self._types.GenerateContentConfig(
+            temperature=temperature,
+            system_instruction=system_instruction,
+            tools=gemini_tools,
         )
+        deadline = time.monotonic() + 300  # 5 minutes
+        attempt = 0
+        wait = 1
+        while True:
+            try:
+                response = self._client.models.generate_content(
+                    model=self._model_name,
+                    contents=contents,
+                    config=generate_config,
+                )
+                break
+            except Exception as e:
+                msg = str(e)
+                is_retryable = "503" in msg or "UNAVAILABLE" in msg or "429" in msg or "RESOURCE_EXHAUSTED" in msg
+                if is_retryable and time.monotonic() < deadline:
+                    attempt += 1
+                    print(f"  [retry] LLM transient error (attempt {attempt}), retrying in {wait}s: {msg[:120]}")
+                    time.sleep(wait)
+                    wait = min(wait * 2, 60)
+                else:
+                    raise
 
         # Extract text content
         text = ""

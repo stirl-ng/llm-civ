@@ -22,3 +22,4 @@ __pycache__
 *.log
 *.jsonl
 *.json
+python/logs/pids.txt
