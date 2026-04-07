@@ -587,19 +587,6 @@ def get_openai_tools() -> list[dict[str, Any]]:
     return TOOL_SCHEMAS
 
 
-def get_gemini_tools() -> list[dict[str, Any]]:
-    """Convert tool schemas to Gemini function_declarations format."""
-    declarations = []
-    for tool in TOOL_SCHEMAS:
-        func = tool["function"]
-        declarations.append({
-            "name": func["name"],
-            "description": func["description"],
-            "parameters": func["parameters"],
-        })
-    return declarations
-
-
 def get_tool_names() -> list[str]:
     """Get list of all tool names."""
     return [tool["function"]["name"] for tool in TOOL_SCHEMAS]

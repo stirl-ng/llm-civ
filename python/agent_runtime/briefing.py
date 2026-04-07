@@ -135,32 +135,3 @@ def generate_reflection_prompt(turn_number: int) -> str:
         "3. Call `record_lesson` if you learned something that applies beyond this game.\n"
         "Then call `end_turn` again."
     )
-
-
-def generate_game_start_prompt(leader_name: str, civ_name: str, personality_desc: str) -> str:
-    """Generate the opening narrative for a new game.
-
-    This establishes who the LLM is and invites them into the experience.
-    """
-    return f"""# The Beginning
-
-You are **{leader_name}**, leader of **{civ_name}**.
-
-{personality_desc}
-
----
-
-The year is 4000 BC. Your people have wandered long enough. They look to you now,
-their chosen leader, to find a home and build something that will last.
-
-A settler party awaits your command. Scouts report this land has potential -
-but so much remains unknown. Mountains on the horizon. Rivers glinting in the distance.
-And somewhere out there, perhaps, others like you with their own dreams of empire.
-
-This is your story. How will it unfold?
-
----
-
-*Take a moment to survey your surroundings with get_map_view before founding your capital.*
-*Consider what kind of civilization you want to build.*
-"""
