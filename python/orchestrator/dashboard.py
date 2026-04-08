@@ -31,6 +31,53 @@ from flask import Flask, Response, render_template, request
 
 _broadcaster = None
 
+# Per-game message cache so SSE pushes don't re-read the full JSONL each time.
+# Keyed by game_id; stores file size at last read + parsed messages + error count.
+_msg_cache: dict[int, dict] = {}
+_cnt_cache: dict[int, dict] = {}  # game_id -> {mtime, count}
+
+
+def _read_messages(log_file: Path, game_id: int) -> tuple[list, int]:
+    """Read JSONL messages incrementally (only new bytes since last call)."""
+    size = log_file.stat().st_size
+    cached = _msg_cache.get(game_id)
+    if cached and cached["size"] == size:
+        return cached["messages"], cached["errors"]
+
+    prior_size   = cached["size"]     if cached else 0
+    prior_msgs   = list(cached["messages"]) if cached else []
+    prior_errors = cached["errors"]   if cached else 0
+
+    new_msgs = []
+    new_errors = 0
+    with open(log_file, "r", encoding="utf-8") as f:
+        if prior_size:
+            f.seek(prior_size)
+        for line in f:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                new_msgs.append(json.loads(stripped))
+            except json.JSONDecodeError:
+                new_errors += 1
+
+    all_msgs   = prior_msgs + new_msgs
+    all_errors = prior_errors + new_errors
+    _msg_cache[game_id] = {"size": size, "messages": all_msgs, "errors": all_errors}
+    return all_msgs, all_errors
+
+
+def _count_messages(file_path: Path, game_id: int) -> int:
+    """Count non-empty lines, cached by mtime."""
+    mtime = file_path.stat().st_mtime
+    cached = _cnt_cache.get(game_id)
+    if cached and cached["mtime"] == mtime:
+        return cached["count"]
+    count = sum(1 for line in open(file_path, "r", encoding="utf-8") if line.strip())
+    _cnt_cache[game_id] = {"mtime": mtime, "count": count}
+    return count
+
 
 def init(broadcaster) -> None:
     """Connect dashboard to the orchestrator's EventBroadcaster for live push updates."""
@@ -298,31 +345,21 @@ def parse_logs(debug_mode: bool = False, game_id: int | None = None) -> dict[str
     debug.file_exists = log_file.exists()
     data["game_id"] = game_id
 
-    # Parse all messages from selected game file
-    messages = []
-    with open(log_file, "r", encoding="utf-8") as f:
-        for line in f:
-            debug.total_lines += 1
-            line = line.strip()
-            if not line:
-                debug.empty_lines += 1
-                continue
-            try:
-                msg = json.loads(line)
-                messages.append(msg)
-                # Track message types
-                msg_type = msg.get("type", "(no type)")
-                debug.type_counts[msg_type] += 1
-            except json.JSONDecodeError as e:
-                debug.parse_errors += 1
-                logger.warning(f"JSON parse error on line {debug.total_lines}: {e}")
-                continue
+    # Parse all messages from selected game file (incremental: only reads new bytes)
+    messages, parse_errors = _read_messages(log_file, game_id)
+    debug.total_lines = len(messages)
+    debug.parse_errors = parse_errors
+    if parse_errors:
+        logger.warning(f"Cumulative JSON parse errors for game {game_id}: {parse_errors}")
+    for msg in messages:
+        msg_type = msg.get("type", "(no type)")
+        debug.type_counts[msg_type] += 1
 
     # Build list of available games from scanned files
     available_games = []
     for gid, file_path, mtime in game_info:
         # Count messages in this game file (only for display)
-        msg_count = sum(1 for line in open(file_path, "r") if line.strip())
+        msg_count = _count_messages(file_path, gid)
         available_games.append({
             "game_id": gid,
             "message_count": msg_count,

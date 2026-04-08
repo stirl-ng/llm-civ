@@ -102,7 +102,7 @@
             z-index: 200;
             box-shadow: 0 4px 16px rgba(0,0,0,0.5);
         }
-        .game-selector:hover .game-selector-dropdown { display: block; }
+        .game-selector-dropdown.open { display: block; }
         .game-selector-item {
             display: flex;
             justify-content: space-between;
@@ -601,6 +601,7 @@
 
     // ── Interaction state ──
     const expandedTurns = new Set();
+    const knownTurns    = new Set();
     const briefingOpen  = new Set();
     const fullMsgOpen   = new Set();
     let toolData        = [];
@@ -745,9 +746,12 @@
         const groups = buildTurnGroups(data.conversation, data.tool_calls);
         document.getElementById('turns-count').textContent = groups.length;
 
-        // Auto-expand latest turn on first render
-        if (expandedTurns.size === 0 && groups.length > 0) {
-            expandedTurns.add(groups[0].turn);
+        // Auto-expand turns as they first appear
+        for (const g of groups) {
+            if (!knownTurns.has(g.turn)) {
+                expandedTurns.add(g.turn);
+                knownTurns.add(g.turn);
+            }
         }
 
         const activeTurn = data.current_turn;
@@ -966,13 +970,31 @@
     if (!params.has('game_id') && PAGE_DATA.game_id) {
         params.set('game_id', PAGE_DATA.game_id);
     }
-    const evtSource = new EventSource('/api/stream?' + params.toString());
-    evtSource.addEventListener('update', e => {
-        if (isModalOpen()) return;
-        try { renderAll(JSON.parse(e.data)); }
-        catch (err) { console.error('SSE parse error:', err); }
-    });
-    evtSource.onerror = () => console.warn('SSE connection lost, reconnecting…');
+
+    function connectSSE() {
+        const src = new EventSource('/api/stream?' + params.toString());
+        src.addEventListener('update', e => {
+            if (isModalOpen()) return;
+            try { renderAll(JSON.parse(e.data)); }
+            catch (err) { console.error('SSE parse error:', err); }
+        });
+        src.onerror = () => {
+            src.close();
+            setTimeout(connectSSE, 3000);
+        };
+    }
+    connectSSE();
+
+    // ── Game selector click toggle ──
+    const selBtn  = document.querySelector('.game-selector-btn');
+    const selDrop = document.querySelector('.game-selector-dropdown');
+    if (selBtn && selDrop) {
+        selBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            selDrop.classList.toggle('open');
+        });
+        document.addEventListener('click', () => selDrop.classList.remove('open'));
+    }
 
     // ── Initial render ──
     renderAll(PAGE_DATA);
