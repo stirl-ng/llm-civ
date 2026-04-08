@@ -317,7 +317,28 @@ class CivMCPServer:
             "limit": "optional int (default 100, max 1000)",
         }),
         # Action tools
-        "send_action": ("_send_action", {"action": "required dict with 'kind' field"}),
+        "move_unit": ("_move_unit", {
+            "unit_id": "required int - ID of the unit to move",
+            "to": "required list[int] - target coordinates [x, y]",
+        }),
+        "unit_found_city": ("_unit_found_city", {
+            "unit_id": "required int - ID of the settler unit",
+        }),
+        "unit_sleep": ("_unit_sleep", {
+            "unit_id": "required int - ID of the unit",
+        }),
+        "unit_skip": ("_unit_skip", {
+            "unit_id": "required int - ID of the unit",
+        }),
+        "unit_alert": ("_unit_alert", {
+            "unit_id": "required int - ID of the unit",
+        }),
+        "unit_fortify": ("_unit_fortify", {
+            "unit_id": "required int - ID of the unit",
+        }),
+        "unit_heal": ("_unit_heal", {
+            "unit_id": "required int - ID of the unit",
+        }),
         "end_turn": ("_end_turn", {"turn": "required int"}),
         "force_end_turn": ("_force_end_turn", {"turn": "required int"}),
         # Popup choice tools
@@ -386,24 +407,41 @@ class CivMCPServer:
         "get_player_status": "Get detailed status information for a player.",
     }
 
-    def _send_action(self, args: dict[str, Any]) -> dict[str, Any]:
-        """Send an action to the DLL and return the response."""
-        action = self._require_param(args, "action", dict)
+    def _move_unit(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Move a unit to target coordinates using A* pathfinding. Multi-turn mission — the unit will continue moving until it arrives. Always call get_units first to get current unit IDs."""
+        unit_id = self._require_param(args, "unit_id", int)
+        to = self._require_param(args, "to", list)
+        return self._send_pipe_request(request={"type": "move_unit", "unit_id": unit_id, "to": to})
 
-        # Validate action has required 'kind' field
-        if not action:
-            raise ToolError("Action cannot be empty")
-        if "kind" not in action:
-            raise ToolError("Action missing required 'kind' field")
+    def _unit_found_city(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Found a city at the settler's current position."""
+        unit_id = self._require_param(args, "unit_id", int)
+        return self._send_pipe_request(request={"type": "unit_found_city", "unit_id": unit_id})
 
-        action_kind = action["kind"]
+    def _unit_sleep(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Put a unit to sleep/fortify indefinitely."""
+        unit_id = self._require_param(args, "unit_id", int)
+        return self._send_pipe_request(request={"type": "unit_sleep", "unit_id": unit_id})
 
-        # Convert action to message: 'kind' -> 'type'
-        message = {k: v for k, v in action.items() if k != "kind"}
-        message["type"] = action_kind
+    def _unit_skip(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Skip a unit's turn (hold position this turn only)."""
+        unit_id = self._require_param(args, "unit_id", int)
+        return self._send_pipe_request(request={"type": "unit_skip", "unit_id": unit_id})
 
-        # Send to DLL
-        return self._send_pipe_request(request=message)
+    def _unit_alert(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Put a unit on alert — it will wake automatically if an enemy approaches."""
+        unit_id = self._require_param(args, "unit_id", int)
+        return self._send_pipe_request(request={"type": "unit_alert", "unit_id": unit_id})
+
+    def _unit_fortify(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Fortify a military unit, giving it a defensive bonus that grows over time."""
+        unit_id = self._require_param(args, "unit_id", int)
+        return self._send_pipe_request(request={"type": "unit_fortify", "unit_id": unit_id})
+
+    def _unit_heal(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Order a unit to heal in place."""
+        unit_id = self._require_param(args, "unit_id", int)
+        return self._send_pipe_request(request={"type": "unit_heal", "unit_id": unit_id})
 
     def _end_turn(self, args: dict[str, Any]) -> dict[str, Any]:
         """Signal that the LLM is done with its turn and wait for DLL confirmation.

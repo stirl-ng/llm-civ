@@ -334,34 +334,109 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "send_action",
-            "description": "Send a unit action command. Use for move_unit, unit_found_city, unit_alert, unit_sleep, unit_skip. Always call get_units first to get current unit IDs — never guess them.",
+            "name": "move_unit",
+            "description": "Move a unit to target coordinates using A* pathfinding. Multi-turn mission — the unit will continue moving until it arrives. Always call get_units first to get current unit IDs — never guess them.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "action": {
-                        "type": "object",
-                        "description": "Action object with 'kind' and parameters. Examples: {\"kind\": \"move_unit\", \"unit_id\": 123, \"to\": [10, 15]}, {\"kind\": \"unit_alert\", \"unit_id\": 123}, {\"kind\": \"unit_found_city\", \"unit_id\": 123}",
-                        "properties": {
-                            "kind": {
-                                "type": "string",
-                                "enum": ["move_unit", "unit_found_city", "unit_alert", "unit_sleep", "unit_skip"],
-                                "description": "Action type",
-                            },
-                            "unit_id": {
-                                "type": "integer",
-                                "description": "ID of the unit to command. Must come from get_units results — never guess.",
-                            },
-                            "to": {
-                                "type": "array",
-                                "items": {"type": "integer"},
-                                "description": "Target coordinates [x, y] for move_unit",
-                            },
-                        },
-                        "required": ["kind", "unit_id"],
+                    "unit_id": {
+                        "type": "integer",
+                        "description": "ID of the unit to move. Must come from get_units results.",
+                    },
+                    "to": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "Target coordinates [x, y].",
                     },
                 },
-                "required": ["action"],
+                "required": ["unit_id", "to"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "unit_found_city",
+            "description": "Found a city at the settler's current position.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "unit_id": {
+                        "type": "integer",
+                        "description": "ID of the settler unit.",
+                    },
+                },
+                "required": ["unit_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "unit_sleep",
+            "description": "Put a unit to sleep/fortify indefinitely.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "unit_id": {"type": "integer", "description": "ID of the unit."},
+                },
+                "required": ["unit_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "unit_skip",
+            "description": "Skip a unit's turn (hold position this turn only).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "unit_id": {"type": "integer", "description": "ID of the unit."},
+                },
+                "required": ["unit_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "unit_alert",
+            "description": "Put a unit on alert — it will wake automatically if an enemy approaches.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "unit_id": {"type": "integer", "description": "ID of the unit."},
+                },
+                "required": ["unit_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "unit_fortify",
+            "description": "Fortify a military unit, giving it a defensive bonus that grows over time.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "unit_id": {"type": "integer", "description": "ID of the unit."},
+                },
+                "required": ["unit_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "unit_heal",
+            "description": "Order a unit to heal in place.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "unit_id": {"type": "integer", "description": "ID of the unit."},
+                },
+                "required": ["unit_id"],
             },
         },
     },
