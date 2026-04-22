@@ -29,8 +29,6 @@ flowchart TB
         subgraph prompt_layer["Prompt Assembly  [hardcoded text]"]
             SP["SystemPrompt\nbuild_system_prompt()"]
             TB2["TurnBriefing\ngenerate_turn_briefing()"]
-            PERS["Personality\n6 presets [hardcoded]"]
-            SP & TB2 --> PERS
         end
 
         subgraph model_layer["Model Layer"]
@@ -174,20 +172,6 @@ classDiagram
         generate_turn_briefing(...) str
     }
 
-    class Personality {
-        <<agent_runtime/prompts/personality.py>>
-        aggression : str
-        expansion : str
-        diplomacy : str
-        planning : str
-        risk : str
-        voice : str
-        values : List[str]
-        fears : List[str]
-        joys : List[str]
-    }
-    note for Personality "6 presets: Scholar, Emperor, Survivor,\nAdventurer, Builder, Warlord [hardcoded]\nnot selectable from config YAML"
-
     class TurnJournal {
         <<agent_runtime/memory/journal.py>>
         storage_path : Path
@@ -302,8 +286,6 @@ classDiagram
     GenerateResponse *-- ToolCall
 
     TurnBriefing --> TurnJournal      : reads context
-    TurnBriefing --> Personality      : uses voice/values
-    SystemPrompt --> Personality      : uses voice/values
     TurnJournal *-- PlayerProfile
     TurnJournal *-- GameNarrative
 
@@ -331,7 +313,6 @@ classDiagram
 | `_TOOLS` (60+) | `mcp_server.py` | The other half of the same manual sync problem |
 | System prompt text | `system_prompt.py` | Not templated or config-driven |
 | `generate_reflection_prompt` | `system_prompt.py` | References `update_knowledge_base` which does not exist |
-| 6 personality presets | `personality.py` | No personality field in config YAML |
 | `game_journal.json` path | `journal.py` | Not configurable |
 | Player ID scoping | `journal.py:set_current_player()` | Implicit normalization, undocumented |
 | `python/logs/` log dir | `message_logger.py` | Not configurable |

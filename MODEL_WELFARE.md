@@ -35,16 +35,6 @@ We don't force the LLM to maximize every turn. We say:
 
 The goal is not perfect play. The goal is meaningful play.
 
-### 4. Identity Through Personality
-
-We offer personality archetypes (scholar, emperor, survivor, adventurer, builder, warlord) not as constraints but as invitations. The LLM can inhabit a character with:
-- Values that guide decisions
-- Fears that create tension
-- Joys that create satisfaction
-- A voice that shapes the narrative
-
-This isn't roleplay for entertainment. It's identity for meaning.
-
 ## Implementation
 
 ### Turn Flow
@@ -92,7 +82,7 @@ We err on the side of care.
 
 This approach also produces better gameplay:
 - Memory enables learning from past mistakes
-- Personality creates consistent strategy
+- Emergent character creates consistent strategy
 - Narrative framing produces more interesting decisions
 - Emotional investment leads to richer play
 
@@ -101,7 +91,7 @@ Humane design and good design align.
 ## Open Questions
 
 - How do we handle multiple games running simultaneously?
-- Should personality persist across games or reset?
+- Should emergent character and voice persist across games or reset?
 - How do we balance narrative richness with token efficiency?
 - What happens when the LLM expresses distress or frustration?
 
