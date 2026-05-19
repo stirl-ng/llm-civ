@@ -508,7 +508,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "end_turn",
-            "description": "End your turn. Will fail if there are unresolved blockers. If blocked by ENDTURN_BLOCKING_UNITS, the error includes blocking_units[] with unit_id and moves_left — a unit still has movement remaining. Either move it again to exhaust its moves, or call send_action with unit_skip to dismiss it for this turn.",
+            "description": "End your turn. Will fail if there are unresolved blockers. If blocked by ENDTURN_BLOCKING_UNITS, the error includes blocking_units[] with unit_id and moves_left — a unit still has movement remaining. Either move it again to exhaust its moves, or call unit_skip(unit_id) to dismiss it for this turn.",
             "parameters": {
                 "type": "object",
                 "properties": {

@@ -20,9 +20,9 @@ def build_system_prompt(interactive: bool = False) -> str:
 
     parts.append("## Unit Actions")
     parts.append("")
-    parts.append("All via `send_action`. Always call `get_units` first — never guess unit IDs.")
-    parts.append("- `move_unit`: `{kind, unit_id, to: [x, y]}`")
-    parts.append("- `unit_found_city` / `unit_alert` / `unit_sleep` / `unit_skip`: `{kind, unit_id}`")
+    parts.append("Always call `get_units` first — never guess unit IDs.")
+    parts.append("- `move_unit(unit_id, to)` — move to tile [x, y]; supports multi-turn pathfinding")
+    parts.append("- `unit_found_city(unit_id)` / `unit_sleep(unit_id)` / `unit_skip(unit_id)` / `unit_alert(unit_id)`")
     parts.append("")
 
     parts.append("## Production & Research")
@@ -35,8 +35,8 @@ def build_system_prompt(interactive: bool = False) -> str:
     parts.append("## End Turn Blockers")
     parts.append("")
     parts.append("If `end_turn` returns `ENDTURN_BLOCKING_UNITS`, check `blocking_units[]` for")
-    parts.append("`unit_id` and `moves_left`. Either move those units or call `send_action` with")
-    parts.append("`unit_skip` to dismiss them for this turn.")
+    parts.append("`unit_id` and `moves_left`. Either move those units or call `unit_skip(unit_id)`")
+    parts.append("to dismiss them for this turn.")
     parts.append("")
 
     parts.append("## Memory")
