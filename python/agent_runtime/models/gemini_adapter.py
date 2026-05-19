@@ -156,11 +156,16 @@ class GeminiChat(ModelAdapter):
             except Exception:
                 pass
 
+        raw_content = None
+        if response.candidates and response.candidates[0].content:
+            raw_content = response.candidates[0].content
+
         return GenerateResponse(
             text=text,
             tool_calls=tool_calls,
             raw_response=response,
             usage=usage,
+            raw_model_content=raw_content,
         )
 
     def _convert_messages(self, messages: List[Dict[str, Any]]) -> tuple[List[Any], Optional[str]]:
@@ -191,19 +196,22 @@ class GeminiChat(ModelAdapter):
                 i += 1
 
             elif role == "assistant":
+                # Use the preserved native Content object when available so that
+                # Gemini thought_signatures on function call Parts survive the round-trip.
+                if msg.get("_raw") is not None:
+                    contents.append(msg["_raw"])
+                    i += 1
+                    continue
+
                 parts = []
-                # Add text if present
                 if content:
                     parts.append(self._types.Part.from_text(text=content))
-
-                # Add function calls if present
                 if msg.get("tool_calls"):
                     for tc in msg["tool_calls"]:
                         parts.append(self._types.Part.from_function_call(
                             name=tc["function"]["name"],
                             args=json.loads(tc["function"]["arguments"]) if isinstance(tc["function"]["arguments"], str) else tc["function"]["arguments"],
                         ))
-
                 if parts:
                     contents.append(self._types.Content(role="model", parts=parts))
                 i += 1

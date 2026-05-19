@@ -32,6 +32,8 @@ def build_assistant_message(response: GenerateResponse) -> dict[str, Any]:
             }
             for tc in response.tool_calls
         ]
+    if response.raw_model_content is not None:
+        msg["_raw"] = response.raw_model_content
     return msg
 
 

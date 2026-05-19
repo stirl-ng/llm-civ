@@ -27,6 +27,9 @@ class GenerateResponse:
     tool_calls: List[ToolCall] = field(default_factory=list)
     raw_response: Any = None
     usage: Dict[str, int] = field(default_factory=dict)
+    # Opaque provider-native content object; used by adapters that need to
+    # preserve internal state (e.g. Gemini thought_signature) across turns.
+    raw_model_content: Any = None
 
     @property
     def has_tool_calls(self) -> bool:
