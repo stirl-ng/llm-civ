@@ -22,7 +22,11 @@ def _render_state_section(state: dict) -> str:
         city_parts = []
         for c in cities:
             prod = c.get("production")
-            prod_str = f"producing {prod['name']} ({prod['turns_left']} turns)" if prod else "idle"
+            if prod:
+                pct = int(prod["progress"] * 100 / prod["cost"]) if prod.get("cost") else 0
+                prod_str = f"producing {prod['name']} ({prod['turns_left']} turns, {pct}% done)"
+            else:
+                prod_str = "idle — set production!"
             city_parts.append(f"{c['name']} (id={c['id']}) — {prod_str} — pop {c['population']}")
         lines.append("**Cities:** " + " | ".join(city_parts))
 
