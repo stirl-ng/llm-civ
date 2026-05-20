@@ -116,13 +116,17 @@ class GeminiChat(ModelAdapter):
 
         # Extract text content
         text = ""
+        thinking_text = ""
         tool_calls: List[ToolCall] = []
 
         # Process response parts
         if response.candidates and response.candidates[0].content:
             for part in (response.candidates[0].content.parts or []):
                 if hasattr(part, "text") and part.text:
-                    text += part.text
+                    if getattr(part, "thought", False):
+                        thinking_text += part.text
+                    else:
+                        text += part.text
                 elif hasattr(part, "function_call") and part.function_call:
                     fc = part.function_call
                     # Gemini doesn't provide IDs, so we generate our own
@@ -150,6 +154,7 @@ class GeminiChat(ModelAdapter):
                 _message_logger.log_llm_response(
                     request_uuid=request_uuid,
                     response=text,
+                    thinking_text=thinking_text or None,
                     tool_calls=[{"name": tc.name, "arguments": tc.arguments} for tc in tool_calls],
                     **{k: v for k, v in usage.items() if v is not None},
                 )

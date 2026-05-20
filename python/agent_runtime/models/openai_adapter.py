@@ -104,6 +104,15 @@ class OpenAIChat(ModelAdapter):
         # Extract text content
         text = (msg.content or "").strip()
 
+        # Extract thinking content if exposed (reasoning models / compatible servers)
+        thinking_text = ""
+        model_extra = getattr(msg, "model_extra", {}) or {}
+        for key in ("reasoning", "thinking", "reasoning_content"):
+            val = model_extra.get(key)
+            if val:
+                thinking_text = val
+                break
+
         # Extract tool calls
         tool_calls: List[ToolCall] = []
         if msg.tool_calls:
@@ -133,6 +142,7 @@ class OpenAIChat(ModelAdapter):
                 _message_logger.log_llm_response(
                     request_uuid=request_uuid,
                     response=text,
+                    thinking_text=thinking_text or None,
                     tool_calls=[{"name": tc.name, "arguments": tc.arguments} for tc in tool_calls],
                     **usage,
                 )

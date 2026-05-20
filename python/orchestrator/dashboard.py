@@ -468,7 +468,17 @@ def parse_logs(debug_mode: bool = False, game_id: int | None = None) -> dict[str
         # LLM response - shows what came back
         if msg_type == "llm_response":
             response = msg.get("response", "")
+            thinking = msg.get("thinking_text", "")
             tokens = msg.get("total_tokens", 0) or 0
+
+            if thinking:
+                conversation.append({
+                    "type": "message",
+                    "role": "thinking",
+                    "content": thinking,
+                    "turn": turn or 0,
+                    "tokens": 0,
+                })
 
             if response:
                 # Filter out tool call syntax - those are shown in Tool Activity panel

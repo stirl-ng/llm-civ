@@ -9,6 +9,10 @@ def build_system_prompt(interactive: bool = False) -> str:
     parts.append("You are playing Civilization V. Each turn: assess your situation, take meaningful")
     parts.append("actions, reflect on what happened, then end your turn.")
     parts.append("")
+    parts.append("**Narrate before you act.** Before each tool call, write a sentence or two explaining")
+    parts.append("what you're doing and why. Think out loud — this helps you reason better and makes")
+    parts.append("the game more readable.")
+    parts.append("")
 
     parts.append("## Each Turn")
     parts.append("")

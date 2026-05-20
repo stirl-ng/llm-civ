@@ -264,6 +264,8 @@
         }
         .tok-badge { color: var(--muted); font-weight: normal; text-transform: none; letter-spacing: 0; }
         .reasoning-text { font-size: 12px; color: var(--text); white-space: pre-wrap; line-height: 1.6; }
+        .thinking-label { color: var(--muted); }
+        .thinking-text  { color: var(--muted); font-style: italic; }
         .show-more { color: var(--blue); cursor: pointer; font-size: 10px; }
         .show-more:hover { color: var(--cyan); }
 
@@ -680,8 +682,9 @@
         if (isExpanded) {
             // messages within a turn are newest-first; reverse to display chronologically
             const chrono = [...messages].reverse();
-            const userMsgs   = chrono.filter(m => m.role === 'user');
-            const assistMsgs = chrono.filter(m => m.role === 'assistant');
+            const userMsgs    = chrono.filter(m => m.role === 'user');
+            const assistMsgs  = chrono.filter(m => m.role === 'assistant');
+            const thinkMsgs   = chrono.filter(m => m.role === 'thinking');
 
             // User briefing (collapsible)
             if (userMsgs.length > 0) {
@@ -699,23 +702,33 @@
                     </div>`;
             }
 
+            // Model thinking (collapsed by default)
+            if (thinkMsgs.length > 0) {
+                const allThinking = thinkMsgs.map(m => m.content).join('\n\n---\n\n');
+                const thinkKey = turn + '_think';
+                const thinkOpen = fullMsgOpen.has(thinkKey);
+                const LIM_T = 200;
+                const longT = allThinking.length > LIM_T;
+                const thinkText = (longT && !thinkOpen) ? allThinking.slice(0, LIM_T) + '…' : allThinking;
+                const moreT = (longT && !thinkOpen)
+                    ? `<span class="show-more" onclick="toggleFullMsg(event,'${thinkKey}')">[show more]</span>`
+                    : '';
+                bodyHtml += `
+                    <div>
+                        <div class="reasoning-label thinking-label">thinking</div>
+                        <div class="reasoning-text thinking-text">${esc(thinkText)}${moreT}</div>
+                    </div>`;
+            }
+
             // Assistant reasoning
             for (let i = 0; i < assistMsgs.length; i++) {
                 const msg = assistMsgs[i];
                 if (!msg.content || !msg.content.trim()) continue;
-                const key  = turn + '_' + i;
-                const open = fullMsgOpen.has(key);
-                const LIM  = 500;
-                const long = msg.content.length > LIM;
-                const text = (long && !open) ? msg.content.slice(0, LIM) + '\u2026' : msg.content;
-                const more = (long && !open)
-                    ? `<span class="show-more" onclick="toggleFullMsg(event,'${key}')">[show more]</span>`
-                    : '';
                 const tok  = msg.tokens ? `<span class="tok-badge">${msg.tokens} tok</span>` : '';
                 bodyHtml += `
                     <div>
                         <div class="reasoning-label">assistant ${tok}</div>
-                        <div class="reasoning-text">${esc(text)}${more}</div>
+                        <div class="reasoning-text">${esc(msg.content)}</div>
                     </div>`;
             }
 

@@ -231,15 +231,19 @@ class MessageLogger:
         request_uuid: str,
         response: str,
         total_tokens: int | None = None,
+        thinking_text: str | None = None,
         **kwargs: Any,
     ) -> str:
         """Log an incoming LLM response."""
-        return self.log({
+        entry: dict[str, Any] = {
             "type": "llm_response",
             "request_uuid": request_uuid,
             "response": response,
             "total_tokens": total_tokens,
-        }, direction="incoming")
+        }
+        if thinking_text:
+            entry["thinking_text"] = thinking_text
+        return self.log(entry, direction="incoming")
 
     def query(
         self,
