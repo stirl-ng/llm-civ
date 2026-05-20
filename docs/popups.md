@@ -10,8 +10,8 @@ Method column: **timer** = auto-close after N seconds | **state** = close when g
 | Tech choice | `TechPopup.lua` | ✓ | state | Sends available techs to pipe |
 | Production choice | `ProductionPopup.lua` | ✓ | state | Sends available items to pipe |
 | Meet civilization intro | `LeaderHeadRoot.lua` | ✓ | timer | DEFAULT_ROOT popup type only |
-| City-state diplomacy | `CityStateDiploPopup.lua` | ✓ | timer | |
-| City-state greeting | `CityStateGreetingPopup.lua` | ✓ | timer | |
+| City-state diplomacy | `CityStateDiploPopup.lua` | ✓ | timer | No semaphore — does not block end_turn |
+| City-state greeting | `CityStateGreetingPopup.lua` | ✓ | timer | No semaphore — does not block end_turn |
 | Trade | `Includes/TradeLogic.lua` | ✓ | ? | Verify method |
 | Goody hut reward | ? | ? | | Blocks end_turn; needs investigation |
 | Natural wonder discovered | ? | ? | | Blocks end_turn; needs investigation |
