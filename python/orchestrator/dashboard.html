@@ -998,6 +998,15 @@
     }
     connectSSE();
 
+    // Polling fallback: re-render every 3 s regardless of SSE state
+    setInterval(() => {
+        if (isModalOpen()) return;
+        fetch('/api/data?' + params.toString())
+            .then(r => r.json())
+            .then(renderAll)
+            .catch(() => {});
+    }, 3000);
+
     // ── Game selector click toggle ──
     const selBtn  = document.querySelector('.game-selector-btn');
     const selDrop = document.querySelector('.game-selector-dropdown');
