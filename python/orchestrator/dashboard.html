@@ -956,12 +956,12 @@
         if (!container) return;
         const scrollTop = container.scrollTop;
 
-        // Halt banner + panel state
-        const haltEntry = turns.find(t => t.halted);
+        // Halt banner driven by live halt state (not JSONL history)
+        const haltActive = data.halt_active || false;
         const banner = document.getElementById('halt-banner');
         const obsPanel = container.closest('.panel');
-        if (haltEntry) {
-            document.getElementById('halt-reason-text').textContent = haltEntry.halt_reason || '';
+        if (haltActive) {
+            document.getElementById('halt-reason-text').textContent = data.halt_reason || '';
             banner.style.display = 'flex';
             if (obsPanel) obsPanel.classList.add('observer-halted');
         } else {

@@ -273,6 +273,11 @@ def run_observer_loop(
                         if event_type == "turn_start":
                             t = event.get("turn")
                             g = event.get("game_id")
+                            # New turn means the game is running — clear any prior halt
+                            try:
+                                requests.post(f"{base_url}/observer/clear_halt", timeout=2)
+                            except Exception:
+                                pass
                             if t is not None and t >= since_turn:
                                 _start_watchdog(t, g)
                             continue

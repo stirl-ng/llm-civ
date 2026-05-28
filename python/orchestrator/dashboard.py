@@ -79,6 +79,15 @@ def _count_messages(file_path: Path, game_id: int) -> int:
     return count
 
 
+def _get_live_halt_state() -> dict:
+    """Read the live halt state from the HTTP server class (same process)."""
+    try:
+        from .mcp_http_server import MCPHTTPHandler
+        return MCPHTTPHandler._halt_state.copy()
+    except Exception:
+        return {"active": False, "reason": None}
+
+
 def init(broadcaster) -> None:
     """Connect dashboard to the orchestrator's EventBroadcaster for live push updates."""
     global _broadcaster
@@ -685,6 +694,8 @@ def parse_logs(debug_mode: bool = False, game_id: int | None = None) -> dict[str
     obs = parse_observer_logs(game_id=data.get("game_id"))
     data["observer_turns"] = obs["observer_turns"]
     data["game_summary"] = obs.get("game_summary")
+    data["halt_active"] = _get_live_halt_state().get("active", False)
+    data["halt_reason"] = _get_live_halt_state().get("reason") or ""
 
     return data
 

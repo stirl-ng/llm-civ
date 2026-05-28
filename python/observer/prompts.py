@@ -106,7 +106,11 @@ def build_turn_analysis_prompt(record: TurnRecord, game_summary: str, known_issu
         "Should we HALT the game now to fix something critical before continuing?",
         "Answer YES or NO on the first line.",
         "If YES: one sentence explaining exactly what needs fixing and which axis.",
-        "Only say YES for blocking issues that will repeat every turn until fixed.",
+        "Rules:",
+        "- Only YES for issues that will recur every turn without a code/prompt fix.",
+        "- Do NOT halt if the agent self-corrected within this turn (retried and succeeded).",
+        "- `end_turn` returning CANNOT_END_TURN due to blocking units is normal — the agent is expected to move those units and retry. This is NOT a harness issue unless it fails even after blockers are cleared.",
+        "- Do NOT halt for minor inefficiency (extra tool calls, redundant checks).",
     ]
 
     return "\n".join(lines)
@@ -171,7 +175,11 @@ def build_stuck_turn_prompt(record: TurnRecord, game_summary: str, elapsed_secon
         "Should we HALT the game now to fix something critical before continuing?",
         "Answer YES or NO on the first line.",
         "If YES: one sentence explaining exactly what needs fixing and which axis.",
-        "Only say YES for blocking issues that will repeat every turn until fixed.",
+        "Rules:",
+        "- Only YES for issues that will recur every turn without a code/prompt fix.",
+        "- Do NOT halt if the agent self-corrected within this turn (retried and succeeded).",
+        "- `end_turn` returning CANNOT_END_TURN due to blocking units is normal — the agent is expected to move those units and retry. This is NOT a harness issue unless it fails even after blockers are cleared.",
+        "- Do NOT halt for minor inefficiency (extra tool calls, redundant checks).",
     ]
 
     return "\n".join(lines)
