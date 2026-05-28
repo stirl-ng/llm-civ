@@ -22,8 +22,8 @@ if sys.stderr.encoding and sys.stderr.encoding.lower() != "utf-8":
 import requests
 import yaml
 
-from observer.ledger import find_log_path, parse_turn_live, parse_game_log, TurnRecord
-from observer.prompts import build_turn_analysis_prompt, build_stuck_turn_prompt, build_game_recommendations_prompt
+from observer.ledger import find_log_path, parse_turn_live, parse_game_log, read_turn_messages, TurnRecord
+from observer.prompts import build_turn_analysis_prompt, build_stuck_turn_prompt, build_game_recommendations_prompt, build_chatbot_prompt, _QUERY_TOOLS
 
 _LOGS_DIR = Path(__file__).parent.parent / "logs"
 
@@ -390,6 +390,115 @@ def run_observer_loop(
         _generate_game_recommendations(current_game_id)
 
 
+def run_chatbot_loop(
+    model,
+    base_url: str,
+    log_dir: Path | None = None,
+    temperature: float = 0.3,
+) -> None:
+    log_dir = log_dir or _LOGS_DIR
+    current_game_id: int | None = None
+    current_turn: int | None = None
+    lock = threading.Lock()
+
+    def sse_listener() -> None:
+        nonlocal current_game_id, current_turn
+        while True:
+            try:
+                requests.get(f"{base_url}/health", timeout=5).raise_for_status()
+            except Exception:
+                time.sleep(2)
+                continue
+
+            try:
+                resp = requests.get(f"{base_url}/events", stream=True, timeout=(10, None))
+                resp.raise_for_status()
+            except requests.exceptions.RequestException:
+                time.sleep(2)
+                continue
+
+            event_type = None
+            try:
+                for raw in resp.iter_lines(chunk_size=1):
+                    line = raw.decode() if isinstance(raw, bytes) else raw
+                    if not line:
+                        event_type = None
+                        continue
+                    if line.startswith(":"):
+                        continue
+                    if line.startswith("event:"):
+                        event_type = line[6:].strip()
+                    elif line.startswith("data:"):
+                        try:
+                            event = json.loads(line[5:].strip())
+                        except json.JSONDecodeError:
+                            continue
+                        if event_type in ("turn_start", "turn_complete"):
+                            t = event.get("turn")
+                            g = event.get("game_id")
+                            with lock:
+                                if g is not None:
+                                    current_game_id = g
+                                if t is not None:
+                                    current_turn = t
+            except requests.exceptions.RequestException:
+                time.sleep(2)
+
+    t = threading.Thread(target=sse_listener, daemon=True)
+    t.start()
+
+    print("[chatbot] Connecting to orchestrator... (questions will work once a game starts)")
+    print("[chatbot] Ask questions about what the agent is doing. Ctrl-C or Ctrl-D to quit.\n")
+
+    while True:
+        try:
+            question = input("> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\n[chatbot] Bye.")
+            break
+        if not question:
+            continue
+
+        with lock:
+            gid, turn = current_game_id, current_turn
+
+        if gid is None:
+            print("No game running yet — waiting for turn_start event.")
+            continue
+        if turn is None:
+            print("Waiting for first turn.")
+            continue
+
+        log_path = find_log_path(gid, log_dir)
+        msgs = read_turn_messages(log_path, turn)
+        if not msgs:
+            print(f"No log data yet for game {gid}, turn {turn}.")
+            continue
+
+        prompt = build_chatbot_prompt(msgs, question, _QUERY_TOOLS)
+        try:
+            answer = model.generate_text(
+                [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a debugging assistant for a Civ V AI agent. "
+                            "Answer the developer's question using only what appears in the trace below. "
+                            "Be specific: cite iteration numbers, tool names, and result values. "
+                            "Explicitly note when the agent has NOT retrieved relevant information."
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=temperature,
+            )
+        except Exception as e:
+            print(f"[chatbot] Model error: {e}")
+            continue
+
+        print(f"\n{answer}\n")
+
+
 def run_post_game(
     model,
     game_id: int,
@@ -472,6 +581,7 @@ def main():
     parser = argparse.ArgumentParser(description="Run Civ V LLM observer")
     parser.add_argument("--config", required=True, help="Config file or short name (e.g., 'observer')")
     parser.add_argument("--post-game", type=int, metavar="GAME_ID", help="Analyze a completed log offline")
+    parser.add_argument("--chatbot", action="store_true", help="Interactive debug chatbot mode")
     parser.add_argument("--since-turn", type=int, default=0)
     args = parser.parse_args()
 
@@ -493,7 +603,10 @@ def main():
     print(f"Observer model: {model.name()}")
     print(f"Temperature: {temperature}")
 
-    if args.post_game:
+    if args.chatbot:
+        print(f"Watching: {base_url}")
+        run_chatbot_loop(model, base_url, log_dir, temperature)
+    elif args.post_game:
         run_post_game(model, args.post_game, log_dir, output_log, since_turn, temperature)
     else:
         print(f"Watching: {base_url}")

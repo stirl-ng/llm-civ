@@ -207,6 +207,29 @@ def parse_game_log(log_path: Path, since_turn: int = 0) -> list[TurnRecord]:
     return [parse_turn(msgs) for _, msgs in sorted(by_turn.items())]
 
 
+def read_turn_messages(log_path: Path, turn: int) -> list[dict]:
+    """Return raw JSONL messages for a turn, without any summarization.
+
+    Safe to call mid-turn — does not wait for turn_complete.
+    """
+    msgs: list[dict] = []
+    try:
+        with log_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    msg = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if msg.get("turn") == turn:
+                    msgs.append(msg)
+    except FileNotFoundError:
+        pass
+    return msgs
+
+
 def parse_turn_live(log_path: Path, turn: int, retries: int = 3, retry_delay: float = 0.5) -> TurnRecord | None:
     """Parse a single turn from a live (still-being-written) log.
 
