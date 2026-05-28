@@ -416,55 +416,27 @@
             font-family: inherit;
         }
 
-        /* ── Tabs ── */
-        .tab-nav {
+        /* ── Halt banner ── */
+        .halt-banner {
+            background: #c01c1c;
+            color: #fff;
+            padding: 9px 16px;
             display: flex;
-            gap: 2px;
             align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
+            border-bottom: 1px solid rgba(255,120,120,0.3);
+            animation: halt-pulse 1.8s ease-in-out infinite;
         }
-        .tab-link {
-            font-size: 11px;
-            padding: 3px 11px;
-            border-radius: 4px;
-            border: 1px solid transparent;
-            color: var(--dim);
-            text-decoration: none;
-            letter-spacing: 0.5px;
+        @keyframes halt-pulse {
+            0%, 100% { background: #c01c1c; }
+            50%       { background: #d93535; }
         }
-        .tab-link:hover { color: var(--text); border-color: var(--border); }
-        .tab-link.active { color: var(--amber); border-color: rgba(232,160,32,0.4); background: rgba(232,160,32,0.07); }
+        .halt-icon  { font-size: 15px; }
+        .halt-label { font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; }
+        .halt-reason { font-size: 11px; color: rgba(255,255,255,0.8); }
 
         /* ── Observer panel ── */
-        .observer-layout {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            flex: 1;
-            min-height: 0;
-            padding: 10px;
-            overflow-y: auto;
-        }
-        .obs-summary-card {
-            background: var(--panel);
-            border: 1px solid var(--border-hi);
-            border-radius: 7px;
-            padding: 14px 16px;
-            flex-shrink: 0;
-        }
-        .obs-summary-label {
-            font-size: 10px;
-            text-transform: uppercase;
-            letter-spacing: 1.5px;
-            color: var(--cyan);
-            margin-bottom: 9px;
-            font-weight: 600;
-        }
-        .obs-summary-text {
-            font-size: 12px;
-            color: var(--dim);
-            white-space: pre-wrap;
-            line-height: 1.6;
-        }
         .obs-turn-card {
             background: var(--panel);
             border: 1px solid var(--border);
@@ -491,6 +463,20 @@
         .obs-outcome.success { color: var(--green); border: 1px solid rgba(61,220,132,0.35); }
         .obs-outcome.blocked { color: var(--amber); border: 1px solid rgba(232,160,32,0.35); }
         .obs-outcome.incomplete { color: var(--muted); border: 1px solid var(--border); }
+        .obs-outcome.stuck { color: var(--red); border: 1px solid rgba(255,90,90,0.4); background: rgba(255,90,90,0.06); }
+        .obs-turn-clean {
+            display: flex; align-items: center; gap: 6px;
+            padding: 3px 12px; border-bottom: 1px solid var(--border);
+            opacity: 0.45;
+        }
+        .obs-turn-clean:last-child { border-bottom: none; }
+        .obs-clean-label { font-size: 9px; color: var(--muted); margin-left: auto; letter-spacing: 0.5px; }
+        .obs-issue { font-size: 11px; color: var(--dim); line-height: 1.5; padding: 2px 0; }
+        .obs-axis { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); margin-right: 4px; }
+        .panel.observer-halted { border-color: rgba(255,60,60,0.55); box-shadow: 0 0 14px rgba(255,40,40,0.15); }
+        .panel.observer-halted .panel-header { border-bottom-color: rgba(255,60,60,0.25); }
+        .panel.observer-halted .panel-title { color: var(--red); }
+        .panel.observer-halted .count-badge { background: rgba(200,30,30,0.4); color: #ff9090; }
         .obs-halt-badge {
             font-size: 9px; padding: 1px 7px; border-radius: 8px; font-weight: 700;
             color: var(--red); border: 1px solid rgba(255,90,90,0.4);
@@ -576,20 +562,15 @@
         <button class="game-selector-btn">Game {{ game_id or '—' }} ▾</button>
         <div class="game-selector-dropdown">
             {% for game in available_games %}
-            <a href="{% if active_tab == 'observer' %}/observer{% else %}/{% endif %}?game_id={{ game.game_id }}{% if active_tab == 'game' and debug_mode %}&debug=1{% endif %}"
+            <a href="/?game_id={{ game.game_id }}{% if debug_mode %}&debug=1{% endif %}"
                class="game-selector-item {{ 'current' if game.is_current else '' }}">
                 <span>{{ game.game_id }}</span>
-                {% if active_tab == 'game' %}<span class="msg-count">{{ game.message_count }} msgs</span>{% endif %}
+                <span class="msg-count">{{ game.message_count }} msgs</span>
             </a>
             {% endfor %}
         </div>
     </div>
     {% endif %}
-    <span class="sep">│</span>
-    <nav class="tab-nav">
-        <a href="/{% if game_id %}?game_id={{ game_id }}{% endif %}" class="tab-link {{ 'active' if active_tab == 'game' else '' }}">Game</a>
-        <a href="/observer{% if game_id %}?game_id={{ game_id }}{% endif %}" class="tab-link {{ 'active' if active_tab == 'observer' else '' }}">Observer</a>
-    </nav>
     <div class="header-right">
         <span class="cost-info">
             <span class="cost-val">${{ "%.4f"|format(estimated_cost) }}</span>
@@ -635,8 +616,15 @@
 </div>
 {% endif %}
 
+<!-- Halt banner -->
+<div class="halt-banner" id="halt-banner" style="display:none">
+    <span class="halt-icon">⚠</span>
+    <strong class="halt-label">OBSERVER HALT</strong>
+    <span class="halt-reason" id="halt-reason-text"></span>
+</div>
+
 <!-- Main layout -->
-<div class="columns" {% if active_tab != 'game' %}style="display:none"{% endif %}>
+<div class="columns">
     <!-- Left: Turn cards -->
     <div class="panel">
         <div class="panel-header">
@@ -661,20 +649,13 @@
         </div>
         <div class="panel half">
             <div class="panel-header">
-                <span class="panel-title" id="notifs-title">Game Events</span>
-                <span class="count-badge" id="notifs-count">0</span>
+                <span class="panel-title">Observer</span>
+                <span class="count-badge" id="observer-count">0</span>
             </div>
-            <div class="panel-scroll" id="notifs-container">
-                <div class="empty">None yet</div>
+            <div class="panel-scroll" id="observer-container">
+                <div class="empty">No observer data yet</div>
             </div>
         </div>
-    </div>
-</div>
-
-<!-- Observer layout -->
-<div class="observer-layout" id="observer-layout" {% if active_tab != 'observer' %}style="display:none"{% endif %}>
-    <div id="observer-container">
-        <div class="obs-empty">No observer data yet — run the observer alongside a game.</div>
     </div>
 </div>
 
@@ -952,27 +933,85 @@
         container.scrollTop = scrollTop;
     }
 
-    // ── Game events panel ──
-    function renderNotifs(data) {
-        const items = data.game_events;
-        document.getElementById('notifs-count').textContent = items.length;
-        const container = document.getElementById('notifs-container');
+    // ── Observer panel ──
+    const OBS_AXES = ['HARNESS', 'PROMPT', 'MOD', 'MCP TOOLS'];
+
+    function parseIssues(text) {
+        const issues = [];
+        for (const line of text.split('\n')) {
+            const t = line.trim();
+            const axis = OBS_AXES.find(a => t.startsWith(a + ' —') || t.startsWith(a + ' —'));
+            if (!axis) continue;
+            const content = t.slice(axis.length + 3).trim();
+            if (content && !content.toLowerCase().startsWith('no issues')) {
+                issues.push({ axis, content });
+            }
+        }
+        return issues;
+    }
+
+    function renderObserver(data) {
+        const turns = (data.observer_turns || []).slice().reverse();
+        const container = document.getElementById('observer-container');
+        if (!container) return;
         const scrollTop = container.scrollTop;
 
-        if (items.length === 0) {
-            container.innerHTML = '<div class="empty">None yet</div>';
+        // Halt banner + panel state
+        const haltEntry = turns.find(t => t.halted);
+        const banner = document.getElementById('halt-banner');
+        const obsPanel = container.closest('.panel');
+        if (haltEntry) {
+            document.getElementById('halt-reason-text').textContent = haltEntry.halt_reason || '';
+            banner.style.display = 'flex';
+            if (obsPanel) obsPanel.classList.add('observer-halted');
         } else {
-            let html = '';
-            for (const item of items) {
-                const label = item.event_type;
+            banner.style.display = 'none';
+            if (obsPanel) obsPanel.classList.remove('observer-halted');
+        }
+
+        document.getElementById('observer-count').textContent = turns.length;
+
+        if (turns.length === 0) {
+            container.innerHTML = '<div class="empty">No observer data yet</div>';
+            container.scrollTop = scrollTop;
+            return;
+        }
+
+        let html = '';
+        for (const t of turns) {
+            const issues = parseIssues(t.observation || '');
+            const outcomeClass = t.outcome || 'incomplete';
+            const haltBadge = t.halted ? `<span class="obs-halt-badge">⚠ halt</span>` : '';
+
+            if (issues.length === 0 && !t.halted) {
+                // Compact clean row
+                html += `<div class="obs-turn-clean">
+                    <span class="obs-turn-num">T${t.turn}</span>
+                    <span class="obs-outcome ${outcomeClass}">${esc(t.outcome || 'incomplete')}</span>
+                    <span class="obs-clean-label">clean</span>
+                </div>`;
+            } else {
+                const haltReason = t.halted && t.halt_reason
+                    ? `<div class="obs-halt-reason">${esc(t.halt_reason)}</div>` : '';
+                let issueHtml = '';
+                for (const { axis, content } of issues) {
+                    issueHtml += `<div class="obs-issue"><span class="obs-axis">${esc(axis)}</span> ${esc(content)}</div>`;
+                }
                 html += `
-                    <div class="notif-item">
-                        <span class="notif-turn">T${item.turn}</span>
-                        <span class="notif-text">${esc(label)}</span>
+                    <div class="obs-turn-card ${t.halted ? 'halted' : ''}">
+                        <div class="obs-turn-header" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none'">
+                            <span class="obs-turn-num">T${t.turn}</span>
+                            <span class="obs-outcome ${outcomeClass}">${esc(t.outcome || 'incomplete')}</span>
+                            ${haltBadge}
+                        </div>
+                        <div class="obs-turn-body">
+                            ${haltReason}
+                            ${issueHtml}
+                        </div>
                     </div>`;
             }
-            container.innerHTML = html;
         }
+        container.innerHTML = html;
         container.scrollTop = scrollTop;
     }
 
@@ -994,7 +1033,7 @@
         updateHeader(data);
         renderTurns(data);
         renderTools(data);
-        renderNotifs(data);
+        renderObserver(data);
     }
 
     // ── Modal ──
@@ -1107,18 +1146,16 @@
             setTimeout(connectSSE, 3000);
         };
     }
-    if (ACTIVE_TAB === 'game') {
-        connectSSE();
+    connectSSE();
 
-        // Polling fallback: re-render every 3 s regardless of SSE state
-        setInterval(() => {
-            if (isModalOpen()) return;
-            fetch('/api/data?' + params.toString())
-                .then(r => r.json())
-                .then(renderAll)
-                .catch(() => {});
-        }, 3000);
-    }
+    // Polling fallback: re-render every 3 s regardless of SSE state
+    setInterval(() => {
+        if (isModalOpen()) return;
+        fetch('/api/data?' + params.toString())
+            .then(r => r.json())
+            .then(renderAll)
+            .catch(() => {});
+    }, 3000);
 
     // ── Game selector click toggle ──
     const selBtn  = document.querySelector('.game-selector-btn');
@@ -1131,83 +1168,8 @@
         document.addEventListener('click', () => selDrop.classList.remove('open'));
     }
 
-    // ── Observer ──
-    const ACTIVE_TAB = '{{ active_tab }}';
-
-    function renderObserver(data) {
-        const container = document.getElementById('observer-container');
-        if (!container) return;
-        const scrollTop = document.getElementById('observer-layout').scrollTop;
-
-        const turns = (data.observer_turns || []).slice().reverse(); // newest first
-        if (turns.length === 0 && !data.game_summary) {
-            container.innerHTML = '<div class="obs-empty">No observer data yet — run the observer alongside a game.</div>';
-            return;
-        }
-
-        let html = '';
-
-        if (data.game_summary) {
-            html += `<div class="obs-summary-card">
-                <div class="obs-summary-label">Game Summary</div>
-                <div class="obs-summary-text">${esc(data.game_summary)}</div>
-            </div>`;
-        }
-
-        for (const t of turns) {
-            const outcomeClass = t.outcome || 'incomplete';
-            const haltBadge = t.halted
-                ? `<span class="obs-halt-badge">⚠ halt</span>` : '';
-            const haltReason = t.halted && t.halt_reason
-                ? `<div class="obs-halt-reason">Halt reason: ${esc(t.halt_reason)}</div>` : '';
-            const ts = t.timestamp ? `<span class="obs-ts">${esc(t.timestamp)}</span>` : '';
-            html += `
-                <div class="obs-turn-card ${t.halted ? 'halted' : ''}">
-                    <div class="obs-turn-header" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? '' : 'none'">
-                        <span class="obs-turn-num">TURN ${t.turn}</span>
-                        <span class="obs-outcome ${outcomeClass}">${esc(t.outcome || 'incomplete')}</span>
-                        ${haltBadge}
-                        ${ts}
-                    </div>
-                    <div class="obs-turn-body">
-                        ${haltReason}
-                        <div class="obs-analysis">${esc(t.observation)}</div>
-                    </div>
-                </div>`;
-        }
-
-        container.innerHTML = html;
-        document.getElementById('observer-layout').scrollTop = scrollTop;
-    }
-
-    if (ACTIVE_TAB === 'observer') {
-        renderObserver(PAGE_DATA);
-
-        const obsParams = new URLSearchParams(window.location.search);
-        if (!obsParams.has('game_id') && PAGE_DATA.game_id) {
-            obsParams.set('game_id', PAGE_DATA.game_id);
-        }
-
-        function connectObserverSSE() {
-            const src = new EventSource('/api/observer/stream?' + obsParams.toString());
-            src.addEventListener('update', e => {
-                try { renderObserver(JSON.parse(e.data)); }
-                catch (err) { console.error('Observer SSE parse error:', err); }
-            });
-            src.onerror = () => { src.close(); setTimeout(connectObserverSSE, 3000); };
-        }
-        connectObserverSSE();
-
-        setInterval(() => {
-            fetch('/api/observer/data?' + obsParams.toString())
-                .then(r => r.json())
-                .then(renderObserver)
-                .catch(() => {});
-        }, 5000);
-    }
-
     // ── Initial render ──
-    if (ACTIVE_TAB === 'game') renderAll(PAGE_DATA);
+    renderAll(PAGE_DATA);
 </script>
 </body>
 </html>

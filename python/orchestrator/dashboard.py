@@ -682,6 +682,10 @@ def parse_logs(debug_mode: bool = False, game_id: int | None = None) -> dict[str
         debug.type_counts = dict(debug.type_counts)
         data["debug"] = debug.__dict__
 
+    obs = parse_observer_logs(game_id=data.get("game_id"))
+    data["observer_turns"] = obs["observer_turns"]
+    data["game_summary"] = obs.get("game_summary")
+
     return data
 
 
@@ -777,55 +781,6 @@ def parse_observer_logs(game_id: int | None = None) -> dict[str, Any]:
     return data
 
 
-@app.route("/observer")
-def observer_view():
-    game_id_str = request.args.get("game_id")
-    game_id = int(game_id_str) if game_id_str else None
-    data = parse_observer_logs(game_id=game_id)
-    data["page_data_json"] = json.dumps(data)
-    return render_template("dashboard.html", active_tab="observer", **data)
-
-
-@app.route("/api/observer/data")
-def api_observer_data():
-    game_id_str = request.args.get("game_id")
-    game_id = int(game_id_str) if game_id_str else None
-    return parse_observer_logs(game_id=game_id)
-
-
-@app.route("/api/observer/stream")
-def api_observer_stream():
-    game_id_str = request.args.get("game_id")
-    game_id = int(game_id_str) if game_id_str else None
-
-    def generate():
-        data = parse_observer_logs(game_id=game_id)
-        yield f"event: update\ndata: {json.dumps(data)}\n\n"
-        if _broadcaster:
-            q = _broadcaster.subscribe()
-            try:
-                while True:
-                    try:
-                        q.get(timeout=30)
-                    except queue.Empty:
-                        yield ": keepalive\n\n"
-                        continue
-                    data = parse_observer_logs(game_id=game_id)
-                    yield f"event: update\ndata: {json.dumps(data)}\n\n"
-            finally:
-                _broadcaster.unsubscribe(q)
-        else:
-            while True:
-                _time.sleep(30)
-                yield ": keepalive\n\n"
-
-    return Response(
-        generate(),
-        mimetype="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
-
-
 @app.route("/")
 def dashboard():
     debug_mode = request.args.get("debug") == "1"
@@ -834,7 +789,7 @@ def dashboard():
     data = parse_logs(debug_mode=debug_mode, game_id=game_id)
     # Build page_data_json for initial JS render (excludes tool_calls_json to avoid redundancy)
     data["page_data_json"] = json.dumps({k: v for k, v in data.items() if k not in ("tool_calls_json",)})
-    return render_template("dashboard.html", active_tab="game", **data)
+    return render_template("dashboard.html", **data)
 
 
 @app.route("/api/data")

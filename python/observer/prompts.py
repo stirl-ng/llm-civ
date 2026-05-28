@@ -25,7 +25,23 @@ def _format_args(args: dict) -> str:
     return text
 
 
-def build_turn_analysis_prompt(record: TurnRecord, game_summary: str) -> str:
+def _known_issues_section(known_issues: dict | None) -> list[str]:
+    if not known_issues:
+        return []
+    lines = [
+        "",
+        "## Known recurring issues (already on record — do not re-describe)",
+        "For each axis listed below: write 'RECURRING (T{n}–T{m})' and only note new developments.",
+        "If the issue has resolved this turn, write 'RESOLVED — No issues.'",
+        "",
+    ]
+    for axis, info in known_issues.items():
+        span = f"T{info['first_turn']}" if info['first_turn'] == info['last_turn'] else f"T{info['first_turn']}–T{info['last_turn']}"
+        lines.append(f"**{axis}**: \"{info['summary'][:80]}\" — {span}, {info['count']} turn(s)")
+    return lines
+
+
+def build_turn_analysis_prompt(record: TurnRecord, game_summary: str, known_issues: dict | None = None) -> str:
     lines = [
         f"# Observer — Turn {record.turn}",
         "",
@@ -35,12 +51,20 @@ def build_turn_analysis_prompt(record: TurnRecord, game_summary: str) -> str:
         "## This turn",
         f"Outcome: **{record.outcome}** | {record.duration_seconds:.1f}s | "
         f"{len(record.iterations)} iterations | "
-        f"{record.total_tool_calls} tool calls ({record.total_errors} errors)",
+        f"{record.total_tool_calls} tool calls | **{record.total_errors} errors**",
         f"Blockers at start: {_format_blockers(record.blockers_at_start)}",
+    ]
+
+    if record.error_tools:
+        from collections import Counter
+        counts = Counter(record.error_tools)
+        lines.append(f"⚠ Failed tools this turn: {', '.join(f'{t}×{n}' if n > 1 else t for t, n in counts.items())}")
+
+    lines += [
         "",
         "Briefing sent to agent:",
         "```",
-        record.briefing[:1200] + ("…" if len(record.briefing) > 1200 else ""),
+        record.briefing,
         "```",
         "",
         "## Turn trace",
@@ -62,9 +86,77 @@ def build_turn_analysis_prompt(record: TurnRecord, game_summary: str) -> str:
         else:
             lines.append("  (no tool calls)")
 
+    lines += _known_issues_section(known_issues)
+
     lines += [
         "",
         "## Analyze on four axes",
+        "",
+        "**HARNESS** — pipe/timing/metadata/event-ordering issues?",
+        "**PROMPT** — agent confusion, repetition, briefing gaps, missing context?",
+        "**MOD** — incomplete or wrong DLL responses, missing fields, incorrect game state?",
+        "**MCP TOOLS** — missing tools, bad interfaces, misleading error messages, redundant calls?",
+        "",
+        "For each axis: write one sentence. Say \"No issues.\" if nothing stands out.",
+        "Cite iteration numbers when relevant.",
+        "If there were failed tool calls this turn, you MUST address them — do not write 'No issues' for the relevant axis.",
+        "",
+        "## Halt decision",
+        "",
+        "Should we HALT the game now to fix something critical before continuing?",
+        "Answer YES or NO on the first line.",
+        "If YES: one sentence explaining exactly what needs fixing and which axis.",
+        "Only say YES for blocking issues that will repeat every turn until fixed.",
+    ]
+
+    return "\n".join(lines)
+
+
+def build_stuck_turn_prompt(record: TurnRecord, game_summary: str, elapsed_seconds: float, known_issues: dict | None = None) -> str:
+    lines = [
+        f"# Observer — Turn {record.turn} (STUCK, {elapsed_seconds:.0f}s elapsed)",
+        "",
+        "## Game so far",
+        game_summary or "(first turn)",
+        "",
+        "## This turn so far",
+        f"Still running | {elapsed_seconds:.0f}s elapsed | "
+        f"{len(record.iterations)} iterations | "
+        f"{record.total_tool_calls} tool calls ({record.total_errors} errors)",
+        f"Blockers at start: {_format_blockers(record.blockers_at_start)}",
+        "",
+        "Briefing sent to agent:",
+        "```",
+        record.briefing,
+        "```",
+        "",
+        "## Turn trace (partial — turn still running)",
+    ]
+
+    for it in record.iterations:
+        lines.append(f"\n### Iteration {it.iteration}")
+        if it.llm_text:
+            preview = it.llm_text[:300].replace("\n", " ")
+            if len(it.llm_text) > 300:
+                preview += "…"
+            lines.append(f"Agent: \"{preview}\"")
+        else:
+            lines.append("Agent: (no text)")
+        if it.tool_calls:
+            for tc in it.tool_calls:
+                status = "ok" if tc.ok else "FAIL"
+                lines.append(f"  - {tc.tool}({_format_args(tc.arguments)}) → {status}: {tc.result_summary}")
+        else:
+            lines.append("  (no tool calls)")
+
+    lines += _known_issues_section(known_issues)
+
+    lines += [
+        "",
+        "## Analyze on four axes",
+        "",
+        "This turn has exceeded the expected time limit and has not yet called end_turn.",
+        "Based on what you see, diagnose why it may be stuck or looping.",
         "",
         "**HARNESS** — pipe/timing/metadata/event-ordering issues?",
         "**PROMPT** — agent confusion, repetition, briefing gaps, missing context?",

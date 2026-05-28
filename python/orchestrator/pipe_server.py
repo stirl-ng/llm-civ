@@ -416,6 +416,14 @@ class NamedPipeServer:
                 "player_name": message.get("player_name"),
             })
 
+        elif msg_type == "turn_complete" and self._broadcaster:
+            self._broadcaster.emit("turn_complete", {
+                "turn":        message.get("turn"),
+                "game_id":     message.get("game_id"),
+                "player_id":   message.get("player_id"),
+                "player_name": message.get("player_name"),
+            })
+
         # Reconnect recovery: DLL doesn't resend turn_start on pipe reconnect,
         # so synthesize one from the first heartbeat if no turn is pending.
         elif msg_type == "heartbeat" and self._broadcaster and not self._broadcaster.has_pending_turn():

@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -22,7 +23,7 @@ import requests
 import yaml
 
 from observer.ledger import find_log_path, parse_turn_live, parse_game_log, TurnRecord
-from observer.prompts import build_turn_analysis_prompt, build_game_recommendations_prompt
+from observer.prompts import build_turn_analysis_prompt, build_stuck_turn_prompt, build_game_recommendations_prompt
 
 _LOGS_DIR = Path(__file__).parent.parent / "logs"
 
@@ -56,31 +57,49 @@ def _post_halt(base_url: str, reason: str, game_id: int | None, turn: int) -> No
         print(f"  [observer] Warning: failed to post halt signal: {e}")
 
 
+def _extract_axis_issues(text: str) -> dict[str, str | None]:
+    """Return {axis: description} for each axis found in the LLM output. None = no issue."""
+    result: dict[str, str | None] = {}
+    for line in text.splitlines():
+        cleaned = line.strip().lstrip("*").rstrip("*").strip()
+        upper = cleaned.upper()
+        for axis in _AXES:
+            if upper.startswith(axis) and len(upper) > len(axis) and upper[len(axis)] in " —:":
+                content = cleaned[len(axis):].lstrip(" —:*").strip()
+                result[axis] = None if content.lower().startswith("no issues") else (content or None)
+                break
+    return result
+
+
 def _write_jsonl(path: Path, record: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record) + "\n")
 
 
-def _check_halt_in_response(text: str) -> str | None:
-    """Parse the halt decision from the observer LLM's response.
+_AXES = ["HARNESS", "PROMPT", "MOD", "MCP TOOLS"]
+_AXIS_PREFIXES = ("HARNESS", "PROMPT", "MOD", "MCP")
 
-    Looks for a line that starts with YES (case-insensitive) in the halt
-    decision section. Returns the halt reason if found, None otherwise.
+def _check_halt_in_response(text: str) -> str | None:
+    """Find YES/NO halt decision anywhere in the observer LLM's response.
+
+    The model doesn't reliably echo section headers, so we scan all lines.
+    Axis lines (HARNESS —, PROMPT —, etc.) are skipped to avoid false matches.
+    Markdown bold markers are stripped before matching.
     """
-    in_halt_section = False
-    for line in text.splitlines():
-        stripped = line.strip()
-        if "halt decision" in stripped.lower():
-            in_halt_section = True
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        stripped = line.strip().lstrip("*").rstrip("*").strip()
+        upper = stripped.upper()
+        if any(upper.startswith(p) for p in _AXIS_PREFIXES):
             continue
-        if in_halt_section and stripped:
-            if stripped.upper().startswith("YES"):
-                # The reason is on the next non-empty line, or after "YES:"
-                rest = stripped[3:].lstrip(":").strip()
-                return rest or "Observer flagged critical issue (see analysis)"
-            if stripped.upper().startswith("NO"):
-                return None
+        if upper.startswith("YES"):
+            rest = stripped[3:].lstrip(":").strip()
+            if not rest and i + 1 < len(lines):
+                rest = lines[i + 1].strip()
+            return rest or "Observer flagged critical issue (see analysis)"
+        if upper.startswith("NO"):
+            return None
     return None
 
 
@@ -91,12 +110,15 @@ def run_observer_loop(
     output_log: Path | None = None,
     since_turn: int = 0,
     temperature: float = 0.3,
+    stuck_turn_timeout: float = 300.0,
 ) -> None:
     log_dir = log_dir or _LOGS_DIR
     current_game_id: int | None = None
     per_turn_observations: list[str] = []
     turn_records: list[TurnRecord] = []
     game_summary = ""
+    # axis -> {summary, first_turn, last_turn, count}
+    known_issues: dict[str, dict] = {}
 
     def get_output_log(gid: int | None) -> Path:
         if output_log:
@@ -134,6 +156,75 @@ def run_observer_loop(
             "analysis": analysis,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
         })
+
+    watchdog_timer: threading.Timer | None = None
+
+    def _start_watchdog(turn_num: int, gid: int | None) -> None:
+        nonlocal watchdog_timer
+        if watchdog_timer is not None:
+            watchdog_timer.cancel()
+
+        def _on_stuck() -> None:
+            log_path = find_log_path(gid, log_dir) if gid else None
+            if log_path is None:
+                return
+            record = parse_turn_live(log_path, turn_num, retries=1)
+            if record is None:
+                print(f"[observer] Watchdog fired for turn {turn_num} but no log data yet.")
+                return
+            print(f"\n[observer] Turn {turn_num} appears stuck ({stuck_turn_timeout:.0f}s) — analyzing...")
+            prompt = build_stuck_turn_prompt(record, game_summary, stuck_turn_timeout, known_issues)
+            try:
+                analysis = model.generate_text(
+                    [
+                        {"role": "system", "content": "You are an expert game AI evaluator watching a Civilization V LLM agent play in real time."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=temperature,
+                )
+            except Exception as e:
+                print(f"[observer] Error analyzing stuck turn {turn_num}: {e}")
+                return
+
+            print(f"\n[observer] Stuck-turn analysis (turn {turn_num}):")
+            print(analysis)
+
+            _write_jsonl(get_output_log(gid), {
+                "type": "observer_turn",
+                "turn": turn_num,
+                "game_id": gid,
+                "outcome": "stuck",
+                "observation": analysis,
+                "halted": False,
+                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            })
+
+            halt_reason = _check_halt_in_response(analysis)
+            if halt_reason:
+                print(f"\n{'!'*60}")
+                print(f"OBSERVER HALT (stuck turn {turn_num}): {halt_reason}")
+                print(f"{'!'*60}\n")
+                _write_jsonl(get_output_log(gid), {
+                    "type": "observer_turn",
+                    "turn": turn_num,
+                    "game_id": gid,
+                    "outcome": "stuck",
+                    "observation": analysis,
+                    "halted": True,
+                    "halt_reason": halt_reason,
+                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                })
+                _post_halt(base_url, halt_reason, gid, turn_num)
+
+        watchdog_timer = threading.Timer(stuck_turn_timeout, _on_stuck)
+        watchdog_timer.daemon = True
+        watchdog_timer.start()
+
+    def _cancel_watchdog() -> None:
+        nonlocal watchdog_timer
+        if watchdog_timer is not None:
+            watchdog_timer.cancel()
+            watchdog_timer = None
 
     try:
         while True:  # reconnect loop
@@ -174,12 +265,22 @@ def run_observer_loop(
                             continue
 
                         if event_type == "disconnected":
+                            _cancel_watchdog()
                             print("[observer] Orchestrator disconnected.")
                             _generate_game_recommendations(current_game_id)
                             return
 
+                        if event_type == "turn_start":
+                            t = event.get("turn")
+                            g = event.get("game_id")
+                            if t is not None and t >= since_turn:
+                                _start_watchdog(t, g)
+                            continue
+
                         if event_type != "turn_complete":
                             continue
+
+                        _cancel_watchdog()
 
                         turn_num = event.get("turn")
                         game_id = event.get("game_id")
@@ -191,6 +292,7 @@ def run_observer_loop(
                                 per_turn_observations.clear()
                                 turn_records.clear()
                                 game_summary = ""
+                                known_issues.clear()
                             current_game_id = game_id
 
                         if turn_num is None or turn_num < since_turn:
@@ -205,7 +307,7 @@ def run_observer_loop(
 
                         turn_records.append(record)
 
-                        prompt = build_turn_analysis_prompt(record, game_summary)
+                        prompt = build_turn_analysis_prompt(record, game_summary, known_issues)
                         try:
                             analysis = model.generate_text(
                                 [
@@ -219,6 +321,22 @@ def run_observer_loop(
                             continue
 
                         per_turn_observations.append(analysis)
+
+                        # Update known issues from this turn's analysis
+                        for axis, desc in _extract_axis_issues(analysis).items():
+                            if desc:
+                                if axis in known_issues:
+                                    known_issues[axis]["last_turn"] = turn_num
+                                    known_issues[axis]["count"] += 1
+                                else:
+                                    known_issues[axis] = {
+                                        "summary": desc[:100],
+                                        "first_turn": turn_num,
+                                        "last_turn": turn_num,
+                                        "count": 1,
+                                    }
+                            else:
+                                known_issues.pop(axis, None)
 
                         # Update rolling game summary (one sentence per turn)
                         outcome_line = f"Turn {turn_num}: {record.outcome} ({record.total_tool_calls} calls, {record.total_errors} errors)"
@@ -258,6 +376,7 @@ def run_observer_loop(
             except KeyboardInterrupt:
                 raise
             except requests.exceptions.RequestException as e:
+                _cancel_watchdog()
                 print(f"[observer] SSE stream lost: {e}. Reconnecting in 2s...")
                 time.sleep(2)
 
@@ -360,6 +479,7 @@ def main():
     base_url = obs_cfg.get("orchestrator_url", "http://localhost:8765")
     temperature = obs_cfg.get("temperature", 0.3)
     since_turn = args.since_turn or obs_cfg.get("since_turn", 0)
+    stuck_turn_timeout = float(obs_cfg.get("stuck_turn_timeout", 300.0))
     log_dir_str = obs_cfg.get("log_dir")
     log_dir = Path(log_dir_str) if log_dir_str else None
     output_log_str = obs_cfg.get("output_log")
@@ -372,7 +492,8 @@ def main():
         run_post_game(model, args.post_game, log_dir, output_log, since_turn, temperature)
     else:
         print(f"Watching: {base_url}")
-        run_observer_loop(model, base_url, log_dir, output_log, since_turn, temperature)
+        print(f"Stuck-turn timeout: {stuck_turn_timeout:.0f}s")
+        run_observer_loop(model, base_url, log_dir, output_log, since_turn, temperature, stuck_turn_timeout)
 
 
 if __name__ == "__main__":
