@@ -695,8 +695,11 @@ class CivMCPServer:
         diplo_messages = self._message_logger.query(
             message_type="diplomatic_message", game_id=game_id
         )
+        war_warnings = self._message_logger.query(
+            message_type="territory_war_warning", game_id=game_id
+        )
         all_events = sorted(
-            notifications + diplo_messages,
+            notifications + diplo_messages + war_warnings,
             key=lambda m: m.get("timestamp", ""),
         )
         return {

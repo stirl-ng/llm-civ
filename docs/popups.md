@@ -31,6 +31,7 @@ Method column: **instant** = `PopupProcessed` fired immediately in `OnPopup`, po
 | Goody hut reward (informational) | `GoodyHutPopup.lua` | ✓ | timer | `BUTTONPOPUP_GOODY_HUT_REWARD` |
 | Goody hut choice (picker promotion) | `ChooseGoodyHutReward.lua` | ✓ | timer | Auto-selects first valid option; only shown when unit has `PROMOTION_GOODY_HUT_PICKER` |
 | Great Work completed | `GreatWorkPopup.lua` | ✓ | instant | `BUTTONPOPUP_GREAT_WORK_COMPLETED_ACTIVE_PLAYER`; informational only |
+| Move into city-state territory (war) | `DeclareWarPopup.lua` | ✓ | instant | `BUTTONPOPUP_DECLAREWARMOVE` (type 3) for minor civ city tile; sends `{"type":"territory_war_warning",...}` to pipe, cancels move, fires `PopupProcessed` immediately — LLM sees it via `get_notifications` |
 | Natural wonder discovered | ? | ? | | Blocks end_turn; needs investigation |
 | Policy adoption screen | ? | ? | | Blocks end_turn if open |
 | Pantheon choice | ? | ? | | `select_pantheon` tool exists in orchestrator |
