@@ -70,14 +70,16 @@ For deeper post-game analysis: `python -m orchestrator.analyze_logs [--game-id I
 - Model name normalization for journal scoping lives implicitly in `journal.py::set_current_player()`. No documented convention yet.
 - **Only mod `(1) Community Patch` is installed** — the repo contains `(2) Vox Populi` source but it is not deployed. The installed MODS dir at `Documents/My Games/Sid Meier's Civilization 5/MODS/` has only `(1) Community Patch`. Lua overrides go there and in the matching repo path; the `(2)` folder is source-only reference.
 
+**Popups vs. notifications**: These are distinct. A `BUTTONPOPUP_*` is a Civ V UI artifact that can stall `end_turn` by sitting in the UIManager queue — handled in Lua, the LLM never sees it. A `type: notification` is a DLL pipe event that flows into the message logger and is readable via `get_notifications`. The same game event often fires both (e.g., meeting a city-state fires the greeting popup AND a notification). See `docs/popups.md`.
+
 **Finding and fixing a new blocking popup:**
 1. Note the popup title (visible on screen) or the `BUTTONPOPUP_*` type from the log.
-2. Look up the type in `LuaCATS/enum/ButtonPopupTypes.d.lua` to get the hex ID.
-3. Search `CvPlayer.cpp` / `CvGame.cpp` for `AddPopup` calls with that type to understand when it fires.
-4. Search `(1) Community Patch/Core Files/Overrides/` for an existing Lua handler. If none, check the base game at `Program Files (x86)/Steam/steamapps/common/Sid Meier's Civilization V/Assets/DLC/Expansion2/UI/InGame/Popups/`.
-5. Create an override in `(1) Community Patch/Core Files/Overrides/`, add an `import="1"` entry to the `.modinfo` (with md5 from `md5sum`), and copy both files to the installed MODS directory.
-6. Update `docs/popups.md`.
-If the popup has multiple selections or options, select one as default and note that it must be reworked later in `issues.md`.
+2. Look up the type in `LuaCATS/enum/ButtonPopupTypes.d.lua` to get the numeric ID.
+3. Search `CvMinorCivAI.cpp` / `CvPlayer.cpp` / `CvGame.cpp` for `AddPopup` calls with that type to understand when it fires and whether it also calls `AddNotification`.
+4. Search `(1) Community Patch/LUA/` for an existing Lua handler. If none, check the base game at `Program Files (x86)/Steam/steamapps/common/Sid Meier's Civilization V/Assets/DLC/Expansion2/UI/InGame/Popups/`.
+5. For **informational** popups: fire `Events.SerialEventGameMessagePopupProcessed.CallImmediate(type, 0)` at the top of `OnPopup` and return — never queue it. For **choice** popups: send options to the pipe first, then close on the incoming command.
+6. If creating a new file in `Core Files/Overrides/`, add an `import="1"` entry to the `.modinfo` (with md5 from `md5sum`) and copy to the installed MODS directory.
+7. Update `docs/popups.md`.
 
 ## Documentation
 
