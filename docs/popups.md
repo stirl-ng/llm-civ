@@ -26,6 +26,7 @@ Method column: **instant** = `PopupProcessed` fired immediately in `OnPopup`, po
 | Meet civilization intro | `LeaderHeadRoot.lua` | ✓ | timer | DEFAULT_ROOT popup type only |
 | City-state greeting | `CityStateGreetingPopup.lua` | ✓ | instant | Informational only; notification fires separately over pipe. **Note:** must be listed with `import="1"` in modinfo or base game version runs instead. |
 | City-state diplomacy | `CityStateDiploPopup.lua` | ✓ | timer | Has action buttons; LLM interacts via tools not this popup |
+| AI discussion / diplomacy | `Core Files/Overrides/DiscussionDialog.lua` | ✓ | instant | When pipe is live, sends `{"type":"diplomatic_message",...}` to pipe and returns without queuing popup; falls through to normal UI when pipe absent. Handles ~20 `DIPLO_UI_STATE_*` types. **Root cause of inter-turn freeze**: without this, `SetWaitingForBlockingInput` + `isDiploActive()` blocked `CvGame::update()` indefinitely. |
 | Trade | `Includes/TradeLogic.lua` | ✓ | ? | Verify method |
 | Goody hut reward (informational) | `GoodyHutPopup.lua` | ✓ | timer | `BUTTONPOPUP_GOODY_HUT_REWARD` |
 | Goody hut choice (picker promotion) | `ChooseGoodyHutReward.lua` | ✓ | timer | Auto-selects first valid option; only shown when unit has `PROMOTION_GOODY_HUT_PICKER` |
