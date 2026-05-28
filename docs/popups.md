@@ -32,6 +32,7 @@ Method column: **instant** = `PopupProcessed` fired immediately in `OnPopup`, po
 | Goody hut choice (picker promotion) | `ChooseGoodyHutReward.lua` | ✓ | timer | Auto-selects first valid option; only shown when unit has `PROMOTION_GOODY_HUT_PICKER` |
 | Great Work completed | `GreatWorkPopup.lua` | ✓ | instant | `BUTTONPOPUP_GREAT_WORK_COMPLETED_ACTIVE_PLAYER`; informational only |
 | Golden Age started | `GoldenAgePopup.lua` | ✓ | instant | `BUTTONPOPUP_GOLDEN_AGE_REWARD` (type 59); informational only |
+| "World's X-iest" ranking list | `WhosWinningPopup.lua` | ✓ | instant | `BUTTONPOPUP_WHOS_WINNING` (type 54); was missing from modinfo so base game version ran; converted from timer to instant |
 | Move into city-state territory (war) | `DeclareWarPopup.lua` | ✓ | instant | `BUTTONPOPUP_DECLAREWARMOVE` (type 3) for minor civ city tile; sends `{"type":"territory_war_warning",...}` to pipe, cancels move, fires `PopupProcessed` immediately — LLM sees it via `get_notifications` |
 | Natural wonder discovered | ? | ? | | Blocks end_turn; needs investigation |
 | Policy adoption screen | ? | ? | | Blocks end_turn if open |
