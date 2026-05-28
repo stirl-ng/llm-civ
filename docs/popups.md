@@ -33,7 +33,11 @@ Method column: **instant** = `PopupProcessed` fired immediately in `OnPopup`, po
 | Great Work completed | `GreatWorkPopup.lua` | ✓ | instant | `BUTTONPOPUP_GREAT_WORK_COMPLETED_ACTIVE_PLAYER`; informational only |
 | Golden Age started | `GoldenAgePopup.lua` | ✓ | instant | `BUTTONPOPUP_GOLDEN_AGE_REWARD` (type 59); informational only |
 | "World's X-iest" ranking list | `WhosWinningPopup.lua` | ✓ | instant | `BUTTONPOPUP_WHOS_WINNING` (type 54); was missing from modinfo so base game version ran; converted from timer to instant |
-| Move into city-state territory (war) | `DeclareWarPopup.lua` | ✓ | instant | `BUTTONPOPUP_DECLAREWARMOVE` (type 3) for minor civ city tile; sends `{"type":"territory_war_warning",...}` to pipe, cancels move, fires `PopupProcessed` immediately — LLM sees it via `get_notifications` |
+| Move into city-state territory (war) | `DeclareWarPopup.lua` | ✓ | instant | `BUTTONPOPUP_DECLAREWARMOVE` (type 3) minor civ city tile; sends `{"type":"territory_war_warning",...}` to pipe, cancels move |
+| Move into major civ territory (war) | `DeclareWarPopup.lua` | ✓ | instant | `BUTTONPOPUP_DECLAREWARMOVE` major civ territory entry; sends `{"type":"declare_war_warning","cause":"move_into_territory","can_open_borders":...}`, cancels move |
+| Attack unit across war boundary | `DeclareWarPopup.lua` | ✓ | instant | `BUTTONPOPUP_DECLAREWARMOVE` unit attack case; sends `{"type":"declare_war_warning","cause":"attack_unit"}`, cancels attack |
+| Range strike across war boundary | `DeclareWarPopup.lua` | ✓ | instant | `BUTTONPOPUP_DECLAREWARRANGESTRIKE` (type 4); sends `{"type":"declare_war_warning","cause":"range_strike"}`, cancels strike |
+| Plunder trade route (war) | `DeclareWarPopup.lua` | ✓ | instant | `BUTTONPOPUP_DECLAREWAR_PLUNDER_TRADE_ROUTE`; sends `{"type":"declare_war_warning","cause":"plunder_trade_route"}`, cancels plunder |
 | Natural wonder discovered | ? | ? | | Blocks end_turn; needs investigation |
 | Policy adoption screen | ? | ? | | Blocks end_turn if open |
 | Pantheon choice | ? | ? | | `select_pantheon` tool exists in orchestrator |
