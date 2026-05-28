@@ -473,6 +473,14 @@
         .obs-clean-label { font-size: 9px; color: var(--muted); margin-left: auto; letter-spacing: 0.5px; }
         .obs-issue { font-size: 11px; color: var(--dim); line-height: 1.5; padding: 2px 0; }
         .obs-axis { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); margin-right: 4px; }
+        .obs-wish-card {
+            border-left: 2px solid rgba(120,170,255,0.45);
+            background: rgba(80,120,220,0.06);
+            padding: 6px 12px; margin: 2px 0;
+            border-radius: 3px;
+        }
+        .obs-wish-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: rgba(120,170,255,0.7); margin-right: 6px; }
+        .obs-wish-text { font-size: 11px; color: var(--dim); line-height: 1.5; }
         .panel.observer-halted { border-color: rgba(255,60,60,0.55); box-shadow: 0 0 14px rgba(255,40,40,0.15); }
         .panel.observer-halted .panel-header { border-bottom-color: rgba(255,60,60,0.25); }
         .panel.observer-halted .panel-title { color: var(--red); }
@@ -979,6 +987,14 @@
 
         let html = '';
         for (const t of turns) {
+            if (t.record_type === 'wish') {
+                html += `<div class="obs-wish-card">
+                    <span class="obs-wish-label">T${t.turn} wish</span>
+                    <span class="obs-wish-text">${esc(t.description || '')}</span>
+                </div>`;
+                continue;
+            }
+
             const issues = parseIssues(t.observation || '');
             const outcomeClass = t.outcome || 'incomplete';
             const haltBadge = t.halted ? `<span class="obs-halt-badge">⚠ halt</span>` : '';

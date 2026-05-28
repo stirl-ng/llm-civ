@@ -628,6 +628,41 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    # === Self-management ===
+    {
+        "type": "function",
+        "function": {
+            "name": "halt",
+            "description": "Stop the runner immediately and alert the developers. Use when you are genuinely stuck and cannot make progress — e.g. a tool always fails, the game state is inconsistent, or you have tried the same action multiple times without effect. This ends the session.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "type": "string",
+                        "description": "What is wrong and why you cannot continue. Be specific: name the tool, action, or state that is broken.",
+                    },
+                },
+                "required": ["reason"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "wish",
+            "description": "Record a capability you need but don't have — a missing tool, confusing interface, or information gap. Does not stop the turn. Developers will see this.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "description": {
+                        "type": "string",
+                        "description": "What you wish existed. Be specific: name the action you want to take, what inputs it would need, and what you'd use it for right now.",
+                    },
+                },
+                "required": ["description"],
+            },
+        },
+    },
     # === Utility ===
     {
         "type": "function",

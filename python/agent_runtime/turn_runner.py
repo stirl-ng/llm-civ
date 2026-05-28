@@ -92,6 +92,7 @@ def run_turn(
     tool_calls_total = 0
     silent_streak = 0
     halt_reason: str | None = None
+    kill_runner = False
     seen_notification_uuids: set[str] = set()
 
     print(f"  Starting turn {ctx.turn}...")
@@ -105,6 +106,9 @@ def run_turn(
         }, direction="outgoing")
 
     while True:
+        if kill_runner:
+            break
+
         if timeout is not None and time.time() - start_time >= timeout:
             print(f"  [!] Turn timeout ({timeout}s)")
             break
@@ -176,6 +180,12 @@ def run_turn(
                     }, direction="incoming")
                 messages.append(build_tool_result_message(tool_call, result))
 
+                if result.get("_kill_runner"):
+                    halt_reason = result.get("reason", "Agent requested halt")
+                    kill_runner = True
+                    print(f"  [!] Agent called halt: {halt_reason}")
+                    break
+
                 if result.get("_end_turn"):
                     if not is_ok:
                         error = result.get("blocking_type") or result.get("message") or "blocked"
@@ -200,4 +210,6 @@ def run_turn(
     if halt_reason:
         result["halted"] = True
         result["reason"] = halt_reason
+    if kill_runner:
+        result["kill"] = True
     return result

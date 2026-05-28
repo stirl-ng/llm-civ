@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import json
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable
+
+import requests
 
 from agent_runtime.context import TurnContext
 from agent_runtime.http_client import call_tool
 from agent_runtime.memory import get_journal
 from agent_runtime.models.base import ToolCall
+
+_LOG_DIR = Path(__file__).parent.parent.parent / "logs"
 
 
 # --- Local (journal) handlers ---
@@ -57,12 +64,46 @@ def _get_recaps(args: dict[str, Any], ctx: TurnContext) -> dict[str, Any]:
     }
 
 
+def _halt_handler(args: dict[str, Any], ctx: TurnContext) -> dict[str, Any]:
+    reason = args.get("reason", "Agent requested halt")
+    try:
+        requests.post(
+            f"{ctx.base_url}/observer/halt",
+            json={"reason": reason},
+            timeout=3,
+        )
+    except Exception:
+        pass
+    return {"ok": True, "_kill_runner": True, "reason": reason}
+
+
+def _wish_handler(args: dict[str, Any], ctx: TurnContext) -> dict[str, Any]:
+    description = args.get("description", "")
+    if ctx.game_id:
+        log_path = _LOG_DIR / f"observer_{ctx.game_id}.jsonl"
+        record = {
+            "type": "observer_wish",
+            "turn": ctx.turn,
+            "game_id": ctx.game_id,
+            "description": description,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+        try:
+            with log_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(record) + "\n")
+        except Exception:
+            pass
+    return {"ok": True, "message": "Wish recorded."}
+
+
 LOCAL_HANDLERS: dict[str, Callable[[dict[str, Any], TurnContext], dict[str, Any]]] = {
     "record_lesson": _record_lesson,
     "get_lessons": _get_lessons,
     "record_recap": _record_recap,
     "update_strategy": _update_strategy,
     "get_recaps": _get_recaps,
+    "halt": _halt_handler,
+    "wish": _wish_handler,
 }
 
 

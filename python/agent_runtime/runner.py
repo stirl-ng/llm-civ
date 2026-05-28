@@ -143,6 +143,8 @@ def run_game_loop(
                         print(f"\nSummary: {result['iterations']} iterations, {result['tool_calls']} tool calls")
                         if result.get("halted"):
                             print(f"\n{'='*50}\nHALTED: {result.get('reason')}\n{'='*50}")
+                            if result.get("kill"):
+                                sys.exit(1)
                             return
 
             except KeyboardInterrupt:

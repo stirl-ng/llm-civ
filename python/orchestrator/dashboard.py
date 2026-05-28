@@ -773,11 +773,19 @@ def parse_observer_logs(game_id: int | None = None) -> dict[str, Any]:
                     if msg.get("halted"):
                         has_halt = True
                     observer_turns.append({
+                        "record_type": "turn",
                         "turn": msg.get("turn", 0),
                         "outcome": msg.get("outcome", ""),
                         "observation": msg.get("observation", ""),
                         "halted": msg.get("halted", False),
                         "halt_reason": msg.get("halt_reason"),
+                        "timestamp": msg.get("timestamp", ""),
+                    })
+                elif mtype == "observer_wish":
+                    observer_turns.append({
+                        "record_type": "wish",
+                        "turn": msg.get("turn", 0),
+                        "description": msg.get("description", ""),
                         "timestamp": msg.get("timestamp", ""),
                     })
                 elif mtype == "observer_game_summary":
