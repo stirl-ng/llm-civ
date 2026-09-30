@@ -89,6 +89,7 @@ For deeper post-game analysis: `python -m orchestrator.analyze_logs [--game-id I
 - `docs/architecture.md` — Python component diagram (block + class)
 - `docs/unit-actions.md` — unit action tools reference
 - `docs/popups.md` — popup handling inventory
+- `docs/information-gaps.md` — what a human sees vs. what the LLM sees (DLL / tool / briefing audit)
 - `docs/prompt-design.md` — turn briefing principles, design maxims, what the LLM wants
 - `docs/orchestrator.md` — CLI options and HTTP endpoints
 - `docs/protocol.md` — pipe protocol details
