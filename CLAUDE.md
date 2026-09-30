@@ -12,7 +12,7 @@ The project is being redesigned. **`docs/target-architecture.md` is the source o
 
 **Purposeful Movement**: Units move to specific tiles for explicit reasons. Query map state first, identify an objective, then move. `move_unit` supports multi-turn A* pathfinding — give the destination, not the next step. Don't re-issue commands to units already on a mission (`activity="MISSION"`).
 
-**Always push, never poll**: If something changes, send an event. The DLL hooks deeply enough that all state changes can be emitted over the pipe. Nothing in this system should poll for state — the orchestrator reacts to DLL push events, and agents react to orchestrator push events (SSE). Polling (a timed loop that asks for state) is a bug, not a feature. An on-demand read to the DLL while the server answers a tool call, or after a reconnect, is not polling.
+**Always push, never poll**: If something changes, send an event. The DLL hooks deeply enough that all state changes can be emitted over the pipe. Nothing in this system should poll for state — the orchestrator reacts to DLL push events, and agents react to orchestrator push events (SSE). Polling (a timed loop that asks for state) is a bug, not a feature. An on-demand read to the DLL while the server answers a tool call, or after a reconnect, is not polling. The DLL's pushed heartbeat (liveness only) is not polling either.
 
 ## Architecture (v1, current code)
 

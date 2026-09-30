@@ -38,7 +38,7 @@ Status: **Decided** = agreed; do not reopen without the user. **Proposed** = the
 |---|---|---|---|
 | D1 | The game is **Civilization V** with the Community Patch DLL. Do not propose Unciv, Freeciv, or a custom game. | Decided | People know Civ V. "An LLM plays Civ V" means something. A clone or an invented game does not. |
 | D2 | Development runs on the Windows host. **No VM** for now. | Decided | Civ V needs a real DirectX GPU. A VM makes development harder and gives nothing now. VMs or Proton containers are a possible later step for unattended runs. |
-| D3 | Transport: **localhost TCP** replaces the named pipe. | Decided | The pipe forces the Python side to run on Windows. TCP lets it run anywhere. See [TCP feasibility](#tcp-feasibility). |
+| D3 | Transport: **TCP** replaces the named pipe (localhost now; another host later). | Decided | The pipe forces the Python side onto the same Windows machine. It cannot cross machines, VMs, or the Wine/Proton boundary. Many games need many game hosts, so pipes cannot scale. See [TCP feasibility](#tcp-feasibility). |
 | D4 | **Protocol v2**: versioned, handshake on connect, written spec, no `session_id`. The DLL sends raw facts only (no presentation). There is a push event for every state change. | Decided | The protocol is the contract between the game and everything else. |
 | D5 | **Game Server** replaces the orchestrator. It is a **real MCP server**. Each tool is defined once, and clients get the schemas from `tools/list`. | Decided | The v1 "MCP" is a custom HTTP API. It needed the manual `_TOOLS` ↔ `schemas.py` sync. |
 | D6 | The Game Server keeps a **state model** that push events update. It can also send **on-demand reads** to the DLL to confirm ground truth. | Decided | See [Push, not poll](#push-not-poll). |
@@ -49,6 +49,8 @@ Status: **Decided** = agreed; do not reopen without the user. **Proposed** = the
 | D11 | **Agent memory = files in the agent workspace**, written with the harness's own file tools. The workspace instruction file (`AGENTS.md` / `CLAUDE.md`) is the system prompt. The v1 journal tools are removed. | Proposed | All harnesses can do this already. There is no memory API to maintain. |
 | D12 | **Game lifecycle automation** (start Civ, load a game, quit) is **not planned**. Games are started by hand. | Decided (for now) | The DLL loads only after the mod is enabled in the Mods menu. Possibly impossible, and it is not the largest problem. |
 | D13 | **The observer is removed** (per-turn LLM analysis, halt, watchdog). The JSONL parsing (`observer/ledger.py`) can move into the tooling. | Decided | It checked harness health, not play quality, and it used polling. |
+| D15 | **Heartbeat**: the DLL pushes a heartbeat (it already does, every 5 s). The Game Server treats silence longer than a timeout as "game stalled or gone" and pushes that to agents. The heartbeat is for liveness only; state comes from events. | Decided | TCP cannot detect a peer that hangs without closing the connection. The v1 server ignores heartbeats and also syncs the turn number from them, which hid missing events. |
+| D16 | **Topology**: **one Game Server per game** (per DLL connection). Several agents in one game (hotseat) = several MCP sessions to that one server, each bound to one `player_id`. The server filters every view by that player's visibility (fog of war) and blocks each player's `end_turn` until that player's next turn. There is no central server for all games. | Proposed | One Civ V process = one game, and each game host runs one Civ V. A server per game keeps each state model simple and isolates crashes. Scale = more processes. A list of running games, if ever needed, is a small separate registry. |
 | D14 | **Evaluation**: a per-game scorecard (cities, population, techs, demographics ranks at fixed turns) and a replay viewer made from the logs. | Decided | Without results, nothing shows that a change improved play. |
 
 ---
@@ -87,6 +89,9 @@ Status: **Decided** = agreed; do not reopen without the user. **Proposed** = the
 These are **not** polling, and they are allowed:
 - an on-demand read to the DLL while the Game Server answers a tool call (for example, to confirm ground truth before it returns a view)
 - an on-demand read after a reconnect, to rebuild the state model
+- the DLL's heartbeat (D15). It is pushed, not requested. It carries liveness only, and no state must be taken from it.
+
+Heartbeat detail: the DLL sends the heartbeat from the game's main thread (`GameStatePipe::ProcessCommands`). If the main thread is busy (for example, a long AI turn), heartbeats stop. So the DLL must push an event when it starts and ends long work (for example `ai_turns_started` / `ai_turns_ended`). The server can then tell "busy" from "hung", and the timeout applies only when the game is not busy.
 
 ---
 
@@ -108,7 +113,8 @@ TCP is not blocked by the DLL. The named pipe was a choice, not a requirement.
 1. **Tool-call timeouts for a blocking `end_turn` (D10).** AI turns can take a minute or more late in the game. Find and set the timeout for each harness (Claude Code MCP tool timeout, Codex tool timeout, Pi). If a harness cannot wait that long, the fallback is a small driver that reacts to `turn_start` and prompts the harness (Pi RPC mode, or the headless resume mode of each CLI).
 2. **Context over hundreds of turns.** The harness does its own compaction. Verify that the memory files and the instruction file are enough for the agent to stay oriented after compaction.
 3. **Game lifecycle automation (D12).** Parked.
-4. **Multiplayer / multiple agents.** After a single agent plays well. The Game Server must give each player only its own view (fog of war).
+4. **Multiple agents in one game (D16).** After a single agent plays well. The DLL must give per-player visibility, so the server can filter views. Commands must act for the calling player, not only for the "active" player.
+5. **How the DLL finds its Game Server.** With several games, each DLL needs a host:port. Options: a config file next to the mod, or an environment variable set by the launcher. The default stays `127.0.0.1` + a fixed port.
 
 ---
 
