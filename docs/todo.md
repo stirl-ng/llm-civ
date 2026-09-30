@@ -1,13 +1,14 @@
 # TODO
 
-## DLL / C++
+The work order is in [`target-architecture.md`](target-architecture.md#build-order). Items here are smaller items that fit into that order.
 
-- **Strip `session_id` from C++ payloads** — Python no longer reads or uses `session_id`. It's emitted in every outgoing DLL message (turn_start, heartbeat, notifications, etc. in `CvGame.cpp`) and `GetSessionId()` in `GameStatePipe.cpp`. Remove the field from all `payload <<` lines and the `GetSessionId()` method.
+## Game Bridge (DLL)
 
-- Include city growth stats (eg X turns until pop up/down) and more in get_cities and in brief
+- Protocol v2: TCP transport, version + handshake, remove `session_id` from all payloads (`CvGame.cpp`, `GetSessionId()` in `GameStatePipe.cpp`).
+- Settler and worker actions that are still missing (see `docs/information-gaps.md`).
+- Expose settle-site data (`CvPlayer::GetBestSettlePlot` / `PlotFoundValue`) as information for the LLM. It must not choose the site.
 
-- **Track games_played per player** — removed from `PlayerProfile` (was never incremented). Re-add when there's a clear write path (e.g., detect new game in `runner.py` when `game_id` changes).
+## Game Server views
 
-- handle actions for builders and settlers
-
-- find way to communicate where to settle next (avoid borders and ocean)
+- City growth (turns to next population) and yields in the city view.
+- All other gaps: `docs/information-gaps.md`.

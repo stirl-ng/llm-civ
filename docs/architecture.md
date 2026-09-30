@@ -1,5 +1,7 @@
 # Python Architecture
 
+> **v1.** This describes the current Python code. `agent_runtime/`, the observer, and the custom HTTP API are replaced in v2. See [`target-architecture.md`](target-architecture.md).
+
 Components on the Python side only (up to the named pipe; DLL excluded).
 
 Items marked **[hardcoded]** are not modular or configurable.

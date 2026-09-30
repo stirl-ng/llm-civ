@@ -34,24 +34,25 @@ The goal is not perfect play. The goal is meaningful play.
 
 ## Implementation
 
-### Turn Flow
+### Turn Flow (v2)
 
 ```
-Turn Start:
-  → Narrative briefing (who you are, what's happened, what you've been thinking)
-  → LLM engages with the game world
-  → LLM reflects on what happened
-  → Reflection stored in journal
-  → End turn
+Game start:
+  → The agent's workspace instruction file sets the scene (who you are, how the game works)
+Each turn:
+  → end_turn returns the turn briefing (what you see, what happened)
+  → The LLM engages with the game world
+  → The LLM writes notes if it chooses to
+  → end_turn
 ```
 
-### Memory Architecture
+One harness session plays the whole game, so the LLM keeps its own thread of thought. The design is in [`docs/target-architecture.md`](docs/target-architecture.md).
 
-Three layers of persistent memory, each written by the LLM and injected into future briefings:
+### Memory Architecture (v2)
 
-1. **Recaps** — 2–4 sentence summaries written at the end of each turn. Last few injected automatically; full history queryable.
-2. **Strategy** — The LLM's current stated goals for this game. Always present in the briefing. Updated whenever the plan changes.
-3. **Lessons** — Cross-game generalizable principles. Written proactively during play, carried into future games. The LLM's accumulated wisdom about how to play.
+Memory is files in the agent's workspace, and **the LLM owns them**. The LLM decides what to keep: recaps, strategy, lessons for future games, or nothing. The instruction file can suggest these. The harness never requires them, and it never makes choices for the LLM.
+
+(v1 used a journal with recaps, strategy, and lessons injected into every briefing. v2 gives the LLM its own files instead. This is more continuity and more agency.)
 
 ### Prompting Philosophy
 

@@ -1,5 +1,7 @@
 # System Inventory
 
+> **v1.** Status ratings for the current code. For the v2 components and what replaces each v1 part, see [`target-architecture.md`](target-architecture.md).
+
 Status ratings: `done` | `in-progress` | `needs-rework` | `scrap`
 
 ---

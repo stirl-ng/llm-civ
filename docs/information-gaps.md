@@ -1,6 +1,8 @@
 # Information Gaps
 
-What a human player can see in the Civ V UI, compared with what the LLM can see. Use this document to decide what to add to the DLL (shim), the orchestrator tools, and the turn briefing.
+What a human player can see in the Civ V UI, compared with what the LLM can see.
+
+**This is the spec for the v2 Game Server perception views** (D7 in [`target-architecture.md`](target-architecture.md)). The **Tool** and **Brief** columns describe v1 (`schemas.py`, `briefing.py`). In v2, each row becomes data in a view. The **DLL** column shows what the Game Bridge must provide.
 
 Audited 2026-09-30 against `CvGame.cpp::HandlePipeCommand`, `mcp_server._TOOLS` / `_PLACEHOLDER_TOOLS`, `schemas.py`, `briefing.py`, and responses in `python/logs/game_598630335.jsonl`.
 
@@ -13,7 +15,7 @@ Audited 2026-09-30 against `CvGame.cpp::HandlePipeCommand`, `mcp_server._TOOLS` 
 
 ---
 
-## Quick wins: the DLL has it, the LLM does not
+## The DLL has it, v1 does not expose it
 
 | Command | What it returns | Why it is hidden |
 |---|---|---|
@@ -112,9 +114,9 @@ In 58 turns, the LLM never saw its gold, happiness, or culture.
 
 ---
 
-## Briefing: what to add
+## Turn briefing view: what to include
 
-These are candidates. Every item is information, not an instruction. The LLM still decides.
+These are candidates for the view that `end_turn` returns (D10). Every item is information, not an instruction. The LLM still decides.
 
 1. An empire line from `get_player_status`: gold (+/turn), happiness, science, culture to next policy, golden age.
 2. City growth and yields in the existing city line.
