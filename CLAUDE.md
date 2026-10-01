@@ -87,6 +87,10 @@ For deeper post-game analysis: `python -m orchestrator.analyze_logs [--game-id I
 6. If creating a new file in `Core Files/Overrides/`, add an `import="1"` entry to the `.modinfo` (with md5 from `md5sum`) and copy to the installed MODS directory.
 7. Update `docs/popups.md`.
 
+## Work Tracking
+
+Bugs, gaps, and work items are tracked in Linear: project **LLM-Civ** in team **Stirling** (https://linear.app/stirling/project/llm-civ-6eb2636af22e). Use the Linear MCP tools to read and file issues. Labels: component (`dll`, `game-server`, `runner`, `popups`), `information-gap`, and `v1` (fix only if it blocks v1 testing) / `v2` (toward `target-architecture.md`). Put the issue ID in the commit message when a commit addresses one (`popups: handle leaderboard popup (STI-5)`).
+
 ## Documentation
 
 - `docs/target-architecture.md` — **v2 direction; source of truth**
