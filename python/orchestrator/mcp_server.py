@@ -382,6 +382,9 @@ class CivMCPServer:
             "tech_id": "required int - ID of the technology to research",
             "player_id": "optional int - player ID (defaults to active player)"
         }),
+        "declare_war": ("_declare_war", {
+            "player_id": "required int - player ID of the civ or city-state to declare war on",
+        }),
         # Spatial awareness tools
         "get_visible_tiles": ("_get_visible_tiles", {}),
         "get_map_view": ("_get_map_view", {
@@ -647,6 +650,16 @@ class CivMCPServer:
 
         return self._send_pipe_request(request=message)
 
+    def _declare_war(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Declare war on a civilization or city-state.
+
+        Use when a move, attack, range strike, or plunder was blocked by a
+        declare_war_warning or territory_war_warning notification. After
+        declaring war, retry the original action.
+        """
+        player_id = self._require_param(args, "player_id", int)
+        return self._send_pipe_request(request={"type": "declare_war", "player_id": player_id})
+
     def _choose_tech(self, args: dict[str, Any]) -> dict[str, Any]:
         """Select a technology to research.
 
@@ -695,8 +708,14 @@ class CivMCPServer:
         diplo_messages = self._message_logger.query(
             message_type="diplomatic_message", game_id=game_id
         )
+        war_warnings = self._message_logger.query(
+            message_type="territory_war_warning", game_id=game_id
+        )
+        declare_war_warnings = self._message_logger.query(
+            message_type="declare_war_warning", game_id=game_id
+        )
         all_events = sorted(
-            notifications + diplo_messages,
+            notifications + diplo_messages + war_warnings + declare_war_warnings,
             key=lambda m: m.get("timestamp", ""),
         )
         return {

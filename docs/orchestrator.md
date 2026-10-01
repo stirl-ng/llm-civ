@@ -1,5 +1,7 @@
 # Orchestrator
 
+> **v1.** The orchestrator is replaced by the v2 Game Server (TCP + real MCP). See [`target-architecture.md`](target-architecture.md).
+
 Bridges the Civ V DLL (named pipe) and the agent runner (HTTP). See `docs/protocol.md` for message formats.
 
 ## Starting the Orchestrator

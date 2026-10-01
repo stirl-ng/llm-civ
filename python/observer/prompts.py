@@ -186,6 +186,121 @@ def build_stuck_turn_prompt(record: TurnRecord, game_summary: str, elapsed_secon
     return "\n".join(lines)
 
 
+_QUERY_TOOLS = [
+    "get_game_state",
+    "get_cities",
+    "get_city_production",
+    "get_units",
+    "get_notifications",
+    "get_visible_tiles",
+    "get_map_view",
+    "get_reachable_tiles",
+    "get_unit_build_options",
+    "get_available_techs",
+    "get_available_policies",
+    "get_turn_blockers",
+]
+
+_LARGE_FIELDS = {"tiles", "map", "map_raw"}
+
+
+def _format_result(result: dict, max_value_len: int = 400) -> str:
+    """Format a tool result, replacing huge list fields with a count."""
+    slim: dict = {}
+    for k, v in result.items():
+        if k in _LARGE_FIELDS and isinstance(v, list):
+            slim[f"{k}_count"] = len(v)
+        else:
+            slim[k] = v
+    text = json.dumps(slim, indent=2)
+    if len(text) > max_value_len:
+        text = text[:max_value_len] + "\n…"
+    return text
+
+
+def build_chatbot_prompt(messages: list[dict], question: str, available_tool_names: list[str] | None = None) -> str:
+    """Build a prompt for the chatbot to answer a developer's debugging question."""
+    if available_tool_names is None:
+        available_tool_names = _QUERY_TOOLS
+
+    briefing = ""
+    turn_num = None
+    current_iteration = 0
+    iterations_map: dict[int, dict] = {}  # iteration -> {llm_text, tool_calls}
+
+    for msg in messages:
+        mtype = msg.get("type")
+        if mtype == "turn_start":
+            turn_num = msg.get("turn")
+        elif mtype == "turn_start_messages":
+            briefing = msg.get("briefing", "")
+        elif mtype == "iteration_start":
+            n = msg.get("iteration", current_iteration + 1)
+            current_iteration = n
+            iterations_map.setdefault(n, {"llm_text": "", "tool_calls": []})
+        elif mtype == "llm_response":
+            n = current_iteration or 1
+            iterations_map.setdefault(n, {"llm_text": "", "tool_calls": []})
+            iterations_map[n]["llm_text"] = msg.get("response", "") or ""
+        elif mtype == "tool_result":
+            n = msg.get("iteration", current_iteration or 1)
+            iterations_map.setdefault(n, {"llm_text": "", "tool_calls": []})
+            iterations_map[n]["tool_calls"].append({
+                "tool": msg.get("tool", "?"),
+                "arguments": msg.get("arguments", {}),
+                "result": msg.get("result", {}),
+                "ok": msg.get("ok", True),
+            })
+
+    called_tools = {
+        tc["tool"]
+        for it in iterations_map.values()
+        for tc in it["tool_calls"]
+    }
+    not_called = [t for t in available_tool_names if t not in called_tools]
+
+    lines = [f"# Agent trace — Turn {turn_num}"]
+
+    if briefing:
+        lines += ["", "## Briefing sent to agent", "```", briefing.strip(), "```"]
+
+    lines += ["", "## Turn trace (so far)"]
+    for n in sorted(iterations_map):
+        it = iterations_map[n]
+        lines.append(f"\n### Iteration {n}")
+        text = it["llm_text"].strip()
+        if text:
+            lines.append(f"Agent reasoning:\n{text}")
+        else:
+            lines.append("Agent reasoning: (none)")
+        if it["tool_calls"]:
+            for tc in it["tool_calls"]:
+                status = "ok" if tc["ok"] else "FAIL"
+                args_text = json.dumps(tc["arguments"], separators=(",", ":"))
+                if len(args_text) > 120:
+                    args_text = args_text[:120] + "…"
+                result_text = _format_result(tc["result"])
+                lines.append(f"\n  {tc['tool']}({args_text}) → {status}")
+                lines.append(f"  Result: {result_text}")
+        else:
+            lines.append("  (no tool calls)")
+
+    lines += [
+        "",
+        "## Information the agent has NOT retrieved this turn",
+    ]
+    if not_called:
+        lines.append("These query tools were not called — so the agent does not have this data:")
+        for t in not_called:
+            lines.append(f"  - {t}")
+    else:
+        lines.append("All standard query tools were called at least once.")
+
+    lines += ["", "---", "", f"Question: {question}"]
+
+    return "\n".join(lines)
+
+
 def build_game_recommendations_prompt(
     records: list[TurnRecord],
     per_turn_observations: list[str],

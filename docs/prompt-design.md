@@ -2,6 +2,8 @@
 
 Extracted and preserved from earlier design work. Use this when iterating on the system prompt and turn briefing. The specific tools and file references are outdated — the design principles are not.
 
+> **v2 changes** (see [`target-architecture.md`](target-architecture.md)): the system prompt becomes the agent workspace instruction file. The turn briefing becomes the view that `end_turn` returns. Memory becomes files in the agent workspace that the agent reads and writes itself, so the Game Server does not inject recaps, strategy, or lessons. The instruction text can only *influence* the LLM. Nothing is mandatory, and the harness makes no choices for it.
+
 ---
 
 ## What the LLM Wants in the Turn Briefing
@@ -12,9 +14,7 @@ Extracted and preserved from earlier design work. Use this when iterating on the
 - Brief status: cities, current research, gold, happiness
 - Notifications since last turn (events that happened while other civs played)
 - Pending decisions (tech choice, production needed, etc.)
-- Last 2-3 turn recaps (what the LLM did recently)
-- Current strategy (the LLM's stated goals for this game)
-- Top N lessons (cross-game wisdom, most relevant recent ones)
+- (v1 only: last recaps, current strategy, top lessons. In v2 the agent keeps these in its own workspace files.)
 
 **Available on demand via tools (do NOT dump in briefing):**
 - Detailed unit positions and status
@@ -23,8 +23,6 @@ Extracted and preserved from earlier design work. Use this when iterating on the
 - Diplomacy status
 - Map information
 - Victory progress breakdown
-- Older recaps beyond the recent window (`get_recaps`)
-- Full lesson list (`get_lessons`)
 
 **What the LLM does NOT want:**
 - Full game state dumps — too much cognitive load
@@ -65,7 +63,7 @@ What will you do?
 These should inform both system prompt content and briefing structure:
 
 1. **Progressive Disclosure** — Start broad, drill down via tools when needed
-2. **Explicit over implicit** — Tell the LLM what to do; don't assume it knows Civ conventions
+2. **Explicit over implicit** — Explain game mechanics and conventions; don't assume the LLM knows them. Give information, not orders.
 3. **Feedback loops** — Every action should have clear, immediate feedback
 4. **State caching** — Don't re-query unchanged data within a turn
 5. **Error clarity** — Clear error messages, not cryptic failures
@@ -82,34 +80,19 @@ These should inform both system prompt content and briefing structure:
 - Ignore notifications and events
 - Move units without a specific destination and reason
 - Re-query the same state repeatedly within a turn
-- Forget important events — record them as lessons
+- Forget important events — write them down in its notes
 
 ---
 
-## Memory Model
+## Memory and Context (v2)
 
-Three types of persistent memory, each with a clear job:
-
-| Type | Scope | Written | Auto-injected in briefing |
-|------|-------|---------|--------------------------|
-| **Recaps** | This game | LLM at reflection (end of turn) | Last N (configurable, default ~3) |
-| **Strategy** | This game | LLM when plan changes | Always (single string) |
-| **Lessons** | Cross-game | LLM proactively during play | Top N by recency (configurable) |
-
-All are kept forever. Older recaps and full lesson lists are available via tools (`get_recaps`, `get_lessons`) when the LLM wants to look back further.
-
-## Conversation History and Context Compression
-
-- **Within a turn**: Full message history (tool calls, responses) is fine — turns are short
-- **Across turns**: Nothing carries forward except what the briefing contains
-- **Compression happens naturally**: Recaps replace raw history. Each turn, the LLM writes a 2-4 sentence recap. Next turn, that recap is in the briefing instead of all the tool calls.
-- **Lesson review**: Every N turns (configurable), prompt the LLM to review and revise its lessons — prune stale ones, consolidate related ones. Not yet implemented.
+- **Memory**: files in the agent workspace that the agent owns (notes, strategy, lessons, whatever it chooses). The instruction file can suggest what to keep. Nothing is required.
+- **Context**: one long harness session per game. The harness does its own compaction. The agent's files are what survive compaction.
+- v1 had a journal with recaps, strategy, and lessons injected into every briefing, plus a planned forced lesson review. v2 removes both (see D9 and D11 in `target-architecture.md`).
 
 ---
 
 ## Notes on Differences from Claude Plays Pokemon
-
-(Reference: `docs/claude_plays_pokemon_guide.md`)
 
 - **No visual screenshots** — use structured state from DLL instead
 - **Turn-based** — loop per turn, not per frame/action

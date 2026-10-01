@@ -529,6 +529,23 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "declare_war",
+            "description": "Declare war on a civilization or city-state. Use after receiving a declare_war_warning or territory_war_warning notification — those mean a move/attack/strike/plunder was blocked because it would start a war. Call declare_war first, then retry the action. Irreversible; wars have major diplomatic and military consequences.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "player_id": {
+                        "type": "integer",
+                        "description": "Player ID of the target. Available from get_game_state or from the warning notification's city_state_player_id / rival_player_id field.",
+                    },
+                },
+                "required": ["player_id"],
+            },
+        },
+    },
     # === Turn Control ===
     {
         "type": "function",

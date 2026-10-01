@@ -73,6 +73,7 @@ def run_game_loop(
 ):
     """Main loop: subscribe to SSE turn events, run each turn."""
     last_game_id = None
+    prev_seen_uuids: set[str] = set()
 
     try:
         while True:  # reconnect loop
@@ -119,6 +120,7 @@ def run_game_loop(
 
                         if last_game_id is not None and current_game_id != last_game_id:
                             print(f"\nNEW GAME ({last_game_id} -> {current_game_id})")
+                            prev_seen_uuids = set()
                         last_game_id = current_game_id
 
                         if _message_logger:
@@ -139,7 +141,9 @@ def run_game_loop(
                             timeout=turn_timeout,
                             interactive=interactive,
                             temperature=temperature,
+                            prev_seen_uuids=prev_seen_uuids,
                         )
+                        prev_seen_uuids = result.get("seen_uuids", set())
                         print(f"\nSummary: {result['iterations']} iterations, {result['tool_calls']} tool calls")
                         if result.get("halted"):
                             print(f"\n{'='*50}\nHALTED: {result.get('reason')}\n{'='*50}")

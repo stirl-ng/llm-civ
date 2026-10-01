@@ -66,6 +66,7 @@ def run_turn(
     timeout: float | None = None,
     interactive: bool = False,
     temperature: float = 0.7,
+    prev_seen_uuids: set[str] | None = None,
 ) -> dict[str, Any]:
     """Run a single turn: LLM → execute tools → repeat until end_turn."""
     start_time = time.time()
@@ -93,7 +94,9 @@ def run_turn(
     silent_streak = 0
     halt_reason: str | None = None
     kill_runner = False
-    seen_notification_uuids: set[str] = set()
+    # Seed with previous turn's seen UUIDs so post-end_turn notifications
+    # (stamped with the old turn number) surface here as new events.
+    seen_notification_uuids: set[str] = set(prev_seen_uuids) if prev_seen_uuids else set()
 
     print(f"  Starting turn {ctx.turn}...")
 
@@ -123,9 +126,10 @@ def run_turn(
         if _message_logger:
             _message_logger.log({"type": "iteration_start", "iteration": iterations}, direction="outgoing")
 
-        # Inject any notifications that arrived since turn start
+        # Scan from ctx.turn - 1 so post-end_turn notifications from the
+        # previous turn (still stamped with that turn number) are not missed.
         new_notifs = [
-            n for n in fetch_notifications(ctx.base_url, ctx.turn)
+            n for n in fetch_notifications(ctx.base_url, max(0, ctx.turn - 1))
             if n.get("uuid") not in seen_notification_uuids
         ]
         for n in new_notifs:
@@ -197,6 +201,7 @@ def run_turn(
                             "iterations": iterations,
                             "tool_calls": tool_calls_total,
                             "success": True,
+                            "seen_uuids": seen_notification_uuids,
                         }
 
             except Exception as e:
@@ -206,7 +211,7 @@ def run_turn(
                     {"ok": False, "error": str(e)},
                 ))
 
-    result = {"turn": ctx.turn, "iterations": iterations, "tool_calls": tool_calls_total, "success": False}
+    result = {"turn": ctx.turn, "iterations": iterations, "tool_calls": tool_calls_total, "success": False, "seen_uuids": seen_notification_uuids}
     if halt_reason:
         result["halted"] = True
         result["reason"] = halt_reason

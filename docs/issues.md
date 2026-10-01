@@ -4,57 +4,18 @@ These are known problems and pending work. Not a graveyard — remove entries wh
 
 ---
 
-## Multi-agent not yet supported
-The orchestrator has a single `GameState` object with no concept of multiple simultaneous runners. To support multiple agents (one per civ):
-- Orchestrator needs per-player event routing
-- SSE streams need `player_id` filtering
-- Runners must register their `player_id` on connect
-- Hotseat (sequential) works structurally once SSE is in place; simultaneous multiplayer requires concurrent routing and live fog-of-war event forwarding between players
-
----
-
-## Tool schema bifurcation
-`mcp_server._TOOLS` (orchestrator) and `schemas.py` (LLM-facing, OpenAI format) must be kept in sync manually. Adding a tool requires editing both. There is no generation or validation between them — drift is easy and silent.
-
----
-
-## System prompt is monolithic
-`system_prompt.py` generates one big string. No way to enable/disable sections, A/B test prompt strategies, or swap personality modules without editing the file. Needs a composition approach before serious prompt iteration begins.
-
----
-
-## Cross-game lesson review not implemented
-The lesson write/read loop is working: `record_lesson` is in the system prompt, and lessons are auto-injected into the turn briefing via `build_context_summary`. What's missing: periodic lesson review. Every N turns, prompt the LLM to review its lessons — prune stale ones, consolidate related ones. Cadence is configurable in design but not wired up.
-
----
-
-## Interactive mode blocks unsupervised runs
-`prompt_operator()` in `run.py` blocks on stdin. Configs must explicitly set `interactive: false` for unsupervised runs. The function should be removed or replaced with a non-blocking mechanism (e.g., a queue checked from outside the loop).
-
----
-
-## Multi-model config has no convention
-Model name normalization for journal scoping (e.g., `openai:gpt-4o` → `openai_gpt-4o`) is implicit in `journal.py::set_current_player()`. No documented rules for adding a new model backend or ensuring its player_id is stable across config changes.
-
----
-
-## session_id leaks into game-layer messages
-`session_id` is a pipe-connection counter useful only for request routing. C++ includes it in every outgoing message. The orchestrator injects it into tool requests. It adds noise and is a refactor candidate — the game layer should only care about `game_id`.
-
----
-
 ## Unhandled popups
 Some popups still block `end_turn`. See `docs/popups.md` for current status.
 
-Known outstanding: intermittent leaderboard popups still block (not in the popups inventory yet).
+Intermittent "leaderboard" (Who's Winning) blocks were a stale installed `.modinfo`, fixed in STI-5. See the popups.md table.
+
+---
 
 ## Human-gated popups need a systematic fix
 
 Several popups only appear for `isHuman()` players — the C++ check gates them. Because the LLM player is registered as human, it receives these popups, which block `end_turn` until a choice is made. Current workarounds use Lua timer overrides that auto-pick (e.g. `ChooseGoodyHutReward.lua` auto-selects the first valid option). These are stopgaps.
 
-The right fix is one of:
-- **C++ gate**: Add an `ISHUMAN_LLM` flag (or check a per-player "auto-resolve" bit) so the C++ skips the popup and picks randomly for LLM players — no Lua needed.
-- **LLM tool**: For choices that are strategically significant, send options over the pipe and add a tool (like TechPopup/ProductionPopup) so the LLM actually decides.
+The fix: send the options over the pipe and add a tool (like TechPopup/ProductionPopup) so the LLM makes the choice. A human gets these choices, so the LLM gets them too (D9 in `target-architecture.md`). A C++ gate that picks automatically for LLM players is not allowed. The current Lua auto-pick overrides are stopgaps and should be removed when each tool exists.
 
 Other popups likely affected by the same pattern: any VP/CBP feature that adds a `BUTTONPOPUP_CHOOSE_*` guarded by `isHuman()`. Audit `CvPlayer.cpp` and `CvGame.cpp` for all `AddPopup` calls inside `isHuman()` branches before fixing individually.
 
@@ -65,23 +26,8 @@ Notifications sometimes appear at the end of the turn that generated them but ar
 
 ---
 
-## LLM unaware of new tools
-After adding new tools, the system prompt and briefing do not automatically reflect them. The LLM has to either be told explicitly or call `get_tools`. Need a pattern for keeping the system prompt's tool section current without manual drift.
-
----
-
 ## Promotions not exposed
 `get_available_promotions` and other promotion-related tools do not exist. Units that have enough XP to promote are likely blocking end_turn or being silently ignored.
-
----
-
-## Long-game context compression not implemented
-See `docs/prompt-design.md`. For games > ~50 turns, accumulated context will overflow. Progressive summarization (every N turns, summarize + clear history) is designed but not implemented.
-
----
-
-## unit-actions.md response schema unverified
-`docs/unit-actions.md` documents that action responses include a `state_delta` field. This has not been verified against live DLL output — the DLL may not emit deltas at all. Verify before relying on it.
 
 ---
 
@@ -97,3 +43,24 @@ Open question: do C++ AI players ever receive popups that block their turn, or d
 
 ## Per-tile yields missing from get_map_view
 `get_visible_tiles` (C++) does not emit yield data per tile. `get_map_view` therefore cannot include `yields: {food, production, gold, ...}` in the `tiles` JSON it returns. To fix: extend the `get_visible_tiles` handler in `CvGame.cpp` to compute and emit yields for each plot (using `pPlot->calculateYield()` or similar), then surface them in the `tiles` array in `mcp_server._get_map_view`.
+
+---
+
+## Turn number mismatch on end_turn (v1)
+In game 598630335, `end_turn` failed 5 times with "requested to end turn 20, but the current turn is 22" (`mcp_server.py:486`). The runner's turn number and the DLL's turn number are out of sync. Fix only if it blocks v1 testing. v2 must take the turn number from the state model.
+
+---
+
+## Superseded by the v2 redesign
+These v1 issues are closed by [`target-architecture.md`](target-architecture.md), or no longer apply:
+
+- **Multi-agent not yet supported**: Open question 4 (after a single agent plays well)
+- **Tool schema bifurcation**: D5: the MCP server defines each tool once
+- **System prompt is monolithic**: D11: the instruction file is the prompt
+- **Cross-game lesson review not implemented**: D9/D11: no forced review; memory is agent-owned files
+- **Interactive mode blocks unsupervised runs**: D8: the custom runner is removed
+- **Multi-model config has no convention**: D8: harnesses handle models
+- **session_id leaks into game-layer messages**: D4: protocol v2 removes session_id
+- **LLM unaware of new tools**: D5: clients read MCP `tools/list`
+- **Long-game context compression not implemented**: D10/D11: harness compaction + workspace files
+- **unit-actions.md response schema unverified**: verified: `state_delta` is present in the logs of game 598630335

@@ -1,5 +1,7 @@
 # Civ V LLM Bridge
 
+> **Status:** being redesigned. This README describes the current (v1) system. For the direction (TCP protocol v2, a real MCP game server, and agents that run in Pi / Claude Code / Codex), see [`docs/target-architecture.md`](docs/target-architecture.md).
+
 Let large language models play **Civilization V** autonomously. A custom DLL exports game state and accepts commands over a named pipe; a Python orchestrator bridges that to an HTTP API; an agent runner subscribes to turn events, calls the LLM, and executes tool calls until the turn ends.
 
 ## Architecture

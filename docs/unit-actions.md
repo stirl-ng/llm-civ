@@ -1,5 +1,7 @@
 # Unit Actions
 
+> **v1 tool names.** The DLL commands stay in v2. The LLM-facing tools are redefined in the v2 Game Server. See [`target-architecture.md`](target-architecture.md).
+
 How to list units and execute unit actions via the LLM agent tools.
 
 ---

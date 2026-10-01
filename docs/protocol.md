@@ -1,5 +1,7 @@
 # DLL ↔ Orchestrator Protocol
 
+> **v1 protocol.** v2 changes the transport to localhost TCP, adds versioning and a handshake, and removes `session_id`. See [`target-architecture.md`](target-architecture.md). The message format below is the starting point for the v2 spec.
+
 Communication protocol between the Civ V DLL and the Python orchestrator.
 
 **Transport**: Named pipe `\\.\pipe\civv_llm`
@@ -7,7 +9,7 @@ Communication protocol between the Civ V DLL and the Python orchestrator.
 **Encoding**: UTF-8
 **Version**: 1.0
 
-> **Command Reference**: See [`api.yaml`](api.yaml) for the complete specification of all commands, events, hooks, and error codes.
+> **Command Reference**: `api.yaml` no longer exists. The command list is in `HandlePipeCommand()` in `CvGame.cpp`. The protocol v2 spec will replace it.
 
 ---
 
