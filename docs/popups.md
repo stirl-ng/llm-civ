@@ -31,8 +31,8 @@ Method column: **instant** = `PopupProcessed` fired immediately in `OnPopup`, po
 | Goody hut reward (informational) | `GoodyHutPopup.lua` | ✓ | timer | `BUTTONPOPUP_GOODY_HUT_REWARD` |
 | Goody hut choice (picker promotion) | `ChooseGoodyHutReward.lua` | ✓ | timer | Auto-selects first valid option; only shown when unit has `PROMOTION_GOODY_HUT_PICKER` |
 | Great Work completed | `GreatWorkPopup.lua` | ✓ | instant | `BUTTONPOPUP_GREAT_WORK_COMPLETED_ACTIVE_PLAYER`; informational only |
-| Golden Age started | `GoldenAgePopup.lua` | ✓ | instant | `BUTTONPOPUP_GOLDEN_AGE_REWARD` (type 59); informational only |
-| "World's X-iest" ranking list | `WhosWinningPopup.lua` | ✓ | instant | `BUTTONPOPUP_WHOS_WINNING` (type 54); was missing from modinfo so base game version ran; converted from timer to instant |
+| Golden Age started | `Core Files/Overrides/GoldenAgePopup.lua` | ✓ | instant | `BUTTONPOPUP_GOLDEN_AGE_REWARD` (type 59); informational only. Same stale installed `.modinfo` as Who's Winning until STI-5. |
+| "World's X-iest" ranking list ("leaderboard") | `Core Files/Overrides/WhosWinningPopup.lua` | ✓ | instant | `BUTTONPOPUP_WHOS_WINNING` (type 54). Fired from `CvGame::doTurn` every `PROGRESS_POPUP_TURN_FREQUENCY` (25) turns × game-speed train percent, single-player only, so it looks intermittent. No parallel notification. Blocked `end_turn` while the *installed* `.modinfo` lacked the `import="1"` entry (STI-5): the repo copy had it, but the installed copy was stale, so the base-game popup queued. |
 | Move into city-state territory (war) | `DeclareWarPopup.lua` | ✓ | instant | `BUTTONPOPUP_DECLAREWARMOVE` (type 3) minor civ city tile; sends `{"type":"territory_war_warning",...}` to pipe, cancels move |
 | Move into major civ territory (war) | `DeclareWarPopup.lua` | ✓ | instant | `BUTTONPOPUP_DECLAREWARMOVE` major civ territory entry; sends `{"type":"declare_war_warning","cause":"move_into_territory","can_open_borders":...}`, cancels move |
 | Attack unit across war boundary | `DeclareWarPopup.lua` | ✓ | instant | `BUTTONPOPUP_DECLAREWARMOVE` unit attack case; sends `{"type":"declare_war_warning","cause":"attack_unit"}`, cancels attack |
@@ -56,7 +56,7 @@ Method column: **instant** = `PopupProcessed` fired immediately in `OnPopup`, po
    - **Informational popup** (no player choice required): use **instant** — fire `Events.SerialEventGameMessagePopupProcessed.CallImmediate(type, 0)` at the top of `OnPopup` and return. Never call `UIManager:QueuePopup`.
    - **Choice popup** (LLM must select): send options to pipe first, use **state** — close when the choice arrives as a pipe command.
    - **Timer** is a fallback when neither applies cleanly.
-6. If the file is in `LUA/`, it's already loaded. If creating a new override in `Core Files/Overrides/`, add an `import="1"` entry to the `.modinfo` (with md5 from `md5sum`) and copy to the installed MODS directory.
+6. If the file is in `LUA/`, it's already loaded. If creating a new override in `Core Files/Overrides/`, add an `import="1"` entry to the `.modinfo` (with md5 from `md5sum`) then deploy with `scripts/build-and-deploy.ps1 -DeployOnly -NoClear`. If you copy by hand, copy the `.modinfo` too: an override file without its `import="1"` entry in the *installed* `.modinfo` is ignored, and the base-game version runs instead. Confirm with `diff -rq` between the repo and installed mod folders.
 7. Update this table.
 
 ## Notes
