@@ -11,13 +11,17 @@ Intermittent "leaderboard" (Who's Winning) blocks were a stale installed `.modin
 
 ---
 
-## Human-gated popups need a systematic fix
+## Human-gated choice popups
 
-Several popups only appear for `isHuman()` players — the C++ check gates them. Because the LLM player is registered as human, it receives these popups, which block `end_turn` until a choice is made. Current workarounds use Lua timer overrides that auto-pick (e.g. `ChooseGoodyHutReward.lua` auto-selects the first valid option). These are stopgaps.
+The LLM player is registered as human, so it gets the choice popups that the C++ shows only to `isHuman()` players. The AI resolves the same choices inline. Rule (D9 in `target-architecture.md`): send the options over the pipe, add a tool, and never auto-pick in Lua or C++.
 
-The fix: send the options over the pipe and add a tool (like TechPopup/ProductionPopup) so the LLM makes the choice. A human gets these choices, so the LLM gets them too (D9 in `target-architecture.md`). A C++ gate that picks automatically for LLM players is not allowed. The current Lua auto-pick overrides are stopgaps and should be removed when each tool exists.
+Audit of `AddPopup` inside `isHuman()` branches in `CvPlayer.cpp` / `CvGame.cpp` (STI-6):
 
-Other popups likely affected by the same pattern: any VP/CBP feature that adds a `BUTTONPOPUP_CHOOSE_*` guarded by `isHuman()`. Audit `CvPlayer.cpp` and `CvGame.cpp` for all `AddPopup` calls inside `isHuman()` branches before fixing individually.
+- `BUTTONPOPUP_CHOOSE_GOODY_HUT_REWARD` (`CvPlayer::doGoody`) — **done**: `choose_goody_hut_reward` tool; the old Lua auto-pick is gone.
+- `BUTTONPOPUP_MODDER_9` (single-choice event result), `BUTTONPOPUP_MODDER_4` (victory randomization) — informational, not choices.
+- `BUTTONPOPUP_CHOOSEPOLICY` in `CvGame::doControl` — opened by the policies-screen hotkey, not by the game; `adopt_policy` covers the choice.
+
+Still open, outside that audit: choices that a **notification** opens (`CvNotifications::Activate`) and that block `end_turn` through the notification blocker, with no tool yet — free / faith great person (`BUTTONPOPUP_CHOOSE_FREE_GREAT_PERSON`, `_FAITH_GREAT_PERSON`), Maya bonus, archaeology, ideology, and player / city event choices (`NOTIFICATION_EVENT_CHOICE`, `BUTTONPOPUP_MODDER_10` / `_8`). Each needs its own tool.
 
 ---
 
@@ -33,11 +37,6 @@ Notifications sometimes appear at the end of the turn that generated them but ar
 
 ## x/y coordinate correctness unverified across map types
 Tile coordinates passed to and from tools (e.g. `move_unit`, `get_map_view`) have not been verified to be consistent across all map types and sizes. A mismatch between Lua, C++, and Python coordinate conventions could cause units to move to wrong tiles or tool calls to fail silently. Needs a deliberate test across at least two map sizes before coordinate-sensitive features are trusted.
-
----
-
-## AI popup behavior vs LLM popup behavior
-Open question: do C++ AI players ever receive popups that block their turn, or does the C++ always resolve AI decisions inline without showing a popup? If AI players are fully popup-free, then every `isHuman()`-gated popup we encounter is LLM-specific — which informs the fix strategy (see **Human-gated popups** above). Verify by checking `CvPlayer.cpp` and `CvGame.cpp` for any `AddPopup` calls NOT inside an `isHuman()` branch.
 
 ---
 

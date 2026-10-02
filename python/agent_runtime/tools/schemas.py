@@ -551,7 +551,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "end_turn",
-            "description": "End your turn. Will fail if there are unresolved blockers. If blocked by ENDTURN_BLOCKING_UNITS, the error includes blocking_units[] with unit_id and moves_left — a unit still has movement remaining. Either move it again to exhaust its moves, or call unit_skip(unit_id) to dismiss it for this turn.",
+            "description": "End your turn. Will fail if there are unresolved blockers. If blocked by ENDTURN_BLOCKING_UNITS, the error includes blocking_units[] with unit_id and moves_left — a unit still has movement remaining. Either move it again to exhaust its moves, or call unit_skip(unit_id) to dismiss it for this turn. If blocked by GOODY_HUT_CHOICE, the error includes goody_hut_choice.options[] — pick one with choose_goody_hut_reward.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -582,6 +582,23 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         },
     },
     # === Popup Choices ===
+    {
+        "type": "function",
+        "function": {
+            "name": "choose_goody_hut_reward",
+            "description": "Choose the reward from an ancient ruin (goody hut) popped by a unit that may pick its reward. The options (goody_id, type, name) come in the end_turn GOODY_HUT_CHOICE error and in get_turn_blockers. If several ruins are waiting, this resolves the oldest; the result includes next_choice when another is still waiting.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goody_id": {
+                        "type": "integer",
+                        "description": "goody_id of one of the offered options",
+                    },
+                },
+                "required": ["goody_id"],
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
