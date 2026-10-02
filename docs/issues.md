@@ -7,7 +7,7 @@ These are known problems and pending work. Not a graveyard — remove entries wh
 ## Unhandled popups
 Some popups still block `end_turn`. See `docs/popups.md` for current status.
 
-Known outstanding: intermittent leaderboard popups still block (not in the popups inventory yet).
+Intermittent "leaderboard" (Who's Winning) blocks were a stale installed `.modinfo`, fixed in STI-5. See the popups.md table.
 
 ---
 
