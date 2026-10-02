@@ -196,6 +196,7 @@ _QUERY_TOOLS = [
     "get_map_view",
     "get_reachable_tiles",
     "get_unit_build_options",
+    "get_unit_promotions",
     "get_available_techs",
     "get_available_policies",
     "get_turn_blockers",

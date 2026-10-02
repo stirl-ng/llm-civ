@@ -14,7 +14,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "get_units",
-            "description": "Get all units owned by the player with their IDs, positions, types, moves remaining, territory_owner (player ID of the tile's owner, -1 if unowned), is_trespassing (in foreign territory without open borders), is_embarked (on water as embarked unit), activity (AWAKE/MISSION/SLEEP/HOLD/HEAL/SENTRY), and for MISSION units: mission (XML type name e.g. MISSION_BUILD, MISSION_MOVE_TO), mission_target {x,y} for move missions, build_name for build missions. Do NOT issue new commands to units with activity=MISSION.",
+            "description": "Get all units owned by the player with their IDs, positions, types, moves remaining, territory_owner (player ID of the tile's owner, -1 if unowned), is_trespassing (in foreign territory without open borders), is_embarked (on water as embarked unit), experience, level, promotion_ready (enough XP to choose a promotion — see get_unit_promotions), activity (AWAKE/MISSION/SLEEP/HOLD/HEAL/SENTRY), and for MISSION units: mission (XML type name e.g. MISSION_BUILD, MISSION_MOVE_TO), mission_target {x,y} for move missions, build_name for build missions. Do NOT issue new commands to units with activity=MISSION.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -443,6 +443,35 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "get_unit_promotions",
+            "description": "Get a unit's experience, experience_needed for its next promotion, level, current promotions, and available_promotions (promotion_id, name, help) it can choose now. available_promotions is empty unless promotion_ready is true. Without unit_id, returns every unit that can promote now.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "unit_id": {"type": "integer", "description": "ID of the unit. Omit to list every unit that can promote now."},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "promote_unit",
+            "description": "Choose a promotion for a unit that has enough experience (promotion_ready). Pick a promotion_id from the unit's available_promotions (get_unit_promotions). Promoting does not use the unit's moves.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "unit_id": {"type": "integer", "description": "ID of the unit."},
+                    "promotion_id": {"type": "integer", "description": "promotion_id from the unit's available_promotions."},
+                },
+                "required": ["unit_id", "promotion_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "unit_build",
             "description": (
                 "Order a worker to build an improvement (farm, mine, road, etc.) at its current tile. "
@@ -551,7 +580,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "end_turn",
-            "description": "End your turn. Will fail if there are unresolved blockers. If blocked by ENDTURN_BLOCKING_UNITS, the error includes blocking_units[] with unit_id and moves_left — a unit still has movement remaining. Either move it again to exhaust its moves, or call unit_skip(unit_id) to dismiss it for this turn. If blocked by GOODY_HUT_CHOICE, the error includes goody_hut_choice.options[] — pick one with choose_goody_hut_reward.",
+            "description": "End your turn. Will fail if there are unresolved blockers. If blocked by ENDTURN_BLOCKING_UNITS, the error includes blocking_units[] with unit_id and moves_left — a unit still has movement remaining. Either move it again to exhaust its moves, or call unit_skip(unit_id) to dismiss it for this turn. If blocked by ENDTURN_BLOCKING_UNIT_PROMOTION, the error includes promotion_units[] with each unit's available_promotions — choose one per unit with promote_unit. If blocked by GOODY_HUT_CHOICE, the error includes goody_hut_choice.options[] — pick one with choose_goody_hut_reward.",
             "parameters": {
                 "type": "object",
                 "properties": {

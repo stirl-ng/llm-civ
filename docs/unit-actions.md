@@ -17,6 +17,7 @@ Use `get_units` with no arguments. Returns all units for the active player.
 - `moves_remaining` — movement points left this turn
 - `can_move` — whether the unit can still act
 - `activity` — if `"MISSION"`, unit is already executing a queued path; do not re-command it
+- `experience`, `level`, `promotion_ready` — `promotion_ready` means the unit has enough XP to choose a promotion (see [Promotions](#promotions))
 
 ---
 
@@ -95,6 +96,30 @@ Set a unit to heal. Unit skips movement and recovers HP.
 ```json
 { "unit_id": 1002 }
 ```
+
+---
+
+## Promotions
+
+A unit with enough XP has `promotion_ready: true` in `get_units`, and the briefing marks it "can promote". Unless the Promotion Saving game option is on, such a unit blocks `end_turn` with `ENDTURN_BLOCKING_UNIT_PROMOTION`, and the error includes `promotion_units[]` (same shape as `get_unit_promotions`). The game never picks a promotion for the LLM.
+
+### `get_unit_promotions`
+
+```json
+{ "unit_id": 1002 }
+```
+
+`unit_id` is optional; without it, returns every unit that can promote now. Each entry in `units[]` has `unit_id`, `unit_name`, `x`, `y`, `experience`, `experience_needed` (XP for the next level), `level`, `promotion_ready`, `promotions[]` (held: `promotion_id`, `type`, `name`), and `available_promotions[]` (choosable now: also `help`). `available_promotions` is empty unless `promotion_ready`.
+
+### `promote_unit`
+
+```json
+{ "unit_id": 1002, "promotion_id": 7 }
+```
+
+Takes the promotion. Does not use the unit's moves. The result has `promoted` and the updated `unit`. If the unit has XP for more than one level, it stays `promotion_ready` and can promote again.
+
+**Errors:** `UNIT_NOT_FOUND`, `UNIT_NOT_OWNED`, `PROMOTION_NOT_READY`, `CANNOT_PROMOTE`. A failure includes the unit's current `available_promotions`.
 
 ---
 

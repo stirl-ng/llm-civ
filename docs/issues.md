@@ -41,11 +41,6 @@ Notifications from AI moves (e.g. a worker killed) could reach the LLM one turn 
 
 ---
 
-## Promotions not exposed
-`get_available_promotions` and other promotion-related tools do not exist. Units that have enough XP to promote are likely blocking end_turn or being silently ignored.
-
----
-
 ## x/y coordinate correctness unverified across map types
 Tile coordinates passed to and from tools (e.g. `move_unit`, `get_map_view`) have not been verified to be consistent across all map types and sizes. A mismatch between Lua, C++, and Python coordinate conventions could cause units to move to wrong tiles or tool calls to fail silently. Needs a deliberate test across at least two map sizes before coordinate-sensitive features are trusted.
 

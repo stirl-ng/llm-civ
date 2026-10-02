@@ -69,7 +69,7 @@ In 58 turns, the LLM never saw its gold, happiness, or culture.
 | Moves left, HP, XP, level | yes | yes | no | |
 | Activity / mission | yes | yes | no | Added 2026-05-28; the briefing does not show it, so the LLM cannot see which units are idle |
 | Territory / trespass / embarked | yes | yes | no | Added 2026-05-28 |
-| Available promotions | no | no | no | Causes `ENDTURN_BLOCKING_UNIT_PROMOTION` (4 blocks in the last game) |
+| Promotion ready / available promotions | yes | yes | partial | `get_unit_promotions`, `promote_unit`, `end_turn` `promotion_units[]` (STI-9). The briefing marks units that can promote; it does not list the choices |
 | **Foreign units** (barbarians, rivals) | no | no | no | `get_map_view` shows only our units. The LLM cannot see threats. |
 
 ## Map

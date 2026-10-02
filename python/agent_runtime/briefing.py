@@ -32,7 +32,11 @@ def _render_state_section(state: dict) -> str:
 
     units = state.get("units") or []
     if units:
-        unit_parts = [f"{u['unit_type_name']} #{u['id']} at ({u['x']},{u['y']})" for u in units]
+        unit_parts = [
+            f"{u['unit_type_name']} #{u['id']} at ({u['x']},{u['y']})"
+            + (" — can promote" if u.get("promotion_ready") else "")
+            for u in units
+        ]
         lines.append("**Units:** " + " | ".join(unit_parts))
 
     research = state.get("current_research")
