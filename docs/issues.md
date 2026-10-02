@@ -23,6 +23,17 @@ Audit of `AddPopup` inside `isHuman()` branches in `CvPlayer.cpp` / `CvGame.cpp`
 
 Still open, outside that audit: choices that a **notification** opens (`CvNotifications::Activate`) and that block `end_turn` through the notification blocker, with no tool yet — free / faith great person (`BUTTONPOPUP_CHOOSE_FREE_GREAT_PERSON`, `_FAITH_GREAT_PERSON`), Maya bonus, archaeology, ideology, and player / city event choices (`NOTIFICATION_EVENT_CHOICE`, `BUTTONPOPUP_MODDER_10` / `_8`). Each needs its own tool.
 
+**AI players never get popups (STI-7).** All ~50 direct `AddPopup` / `AddPopupWithPipe` call sites in the DLL were checked, not only those in `CvPlayer.cpp` / `CvGame.cpp`. Popups are drawn by the local UI, and `CvPopupInfo` has no recipient player. A popup is therefore gated in one of four ways, and none of them can reach a C++ AI player:
+
+- **Active player / team** (most sites): `GetID() == getActivePlayer()` or `getActiveTeam()`. A C++ AI player is never the active seat. Examples: goody hut, golden age, great person, wonder, great work, barbarian camp, city-state greeting, natural wonder, tech award, return civilian, Who's Winning.
+- **`isHuman()` alone**: `MODDER_9` (`CvPlayer`), `MODDER_7` (`CvCity`), `DECLAREWARMOVE` (`CvUnit::CheckDOWNeededForMove`), and `ADVISOR_MODAL` (`CvUnitMission`, `isHuman(ISHUMAN_UI)`). `isHuman()` is false for every AI player (`CvPreGame::isHuman`).
+- **UI input**: `CvGame::doControl` hotkeys, `CvGame::handleAction` (confirm prompts, trade route and admiral port choices), and `CvNotifications::Activate` (a click on a notification). `CvNotifications::Add` returns early unless `isHuman(ISHUMAN_NOTIFICATIONS)`, so AI players have no notifications to click.
+- **Global splash**: World Congress session / project (`CvVotingClasses`). This is shown to whoever is the active seat, whichever player triggered it.
+
+Every choice the human gets as a popup or notification, the AI resolves inline in the `else` branch (e.g. `AI_DoEventChoice`, `AI_chooseFreeGreatPerson`, `AI_chooseResearch`). So every human-gated popup we hit belongs to the LLM player. Fix each one with a tool for the LLM, never with an AI-side change.
+
+Caveat for multi-LLM hotseat: the four `isHuman()`-only sites do not check the active player. If one LLM's event resolves during another human's turn, `MODDER_9` / `MODDER_7` can appear on the other player's screen. Both are informational, so the Lua auto-close handles them.
+
 ---
 
 ## Notification timing / missed events
