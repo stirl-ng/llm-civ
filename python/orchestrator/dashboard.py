@@ -170,6 +170,7 @@ QUERY_TOOLS = {
     "get_city_production",
     "get_available_techs",
     "get_available_policies",
+    "get_unit_promotions",
     "get_turn_blockers",
     "get_notifications",
     # Map visualization tools

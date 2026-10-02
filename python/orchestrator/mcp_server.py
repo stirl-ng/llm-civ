@@ -339,6 +339,13 @@ class CivMCPServer:
         "unit_heal": ("_unit_heal", {
             "unit_id": "required int - ID of the unit",
         }),
+        "get_unit_promotions": ("_get_unit_promotions", {
+            "unit_id": "optional int - ID of the unit (default: every unit that can promote now)",
+        }),
+        "promote_unit": ("_promote_unit", {
+            "unit_id": "required int - ID of the unit",
+            "promotion_id": "required int - promotion_id from the unit's available_promotions",
+        }),
         "unit_build": ("_unit_build", {
             "unit_id": "required int - ID of the worker unit",
             "build_type": "required int - build type ID from get_unit_build_options",
@@ -452,6 +459,22 @@ class CivMCPServer:
         """Order a unit to heal in place."""
         unit_id = self._require_param(args, "unit_id", int)
         return self._send_pipe_request(request={"type": "unit_heal", "unit_id": unit_id})
+
+    def _get_unit_promotions(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Get a unit's XP, promotions, and the promotions it can choose now.
+
+        Without unit_id, returns every unit of the active player that can promote now.
+        """
+        request: dict[str, Any] = {"type": "get_unit_promotions"}
+        if args.get("unit_id") is not None:
+            request["unit_id"] = self._require_param(args, "unit_id", int)
+        return self._send_pipe_request(request=request)
+
+    def _promote_unit(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Choose a promotion for a unit that has enough XP."""
+        unit_id = self._require_param(args, "unit_id", int)
+        promotion_id = self._require_param(args, "promotion_id", int)
+        return self._send_pipe_request(request={"type": "promote_unit", "unit_id": unit_id, "promotion_id": promotion_id})
 
     def _unit_build(self, args: dict[str, Any]) -> dict[str, Any]:
         """Order a worker to build an improvement at its current tile."""
