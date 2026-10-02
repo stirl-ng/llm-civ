@@ -29,7 +29,7 @@ Method column: **instant** = `PopupProcessed` fired immediately in `OnPopup`, po
 | AI discussion / diplomacy | `Core Files/Overrides/DiscussionDialog.lua` | ✓ | instant | When pipe is live, sends `{"type":"diplomatic_message",...}` to pipe and returns without queuing popup; falls through to normal UI when pipe absent. Handles ~20 `DIPLO_UI_STATE_*` types. **Root cause of inter-turn freeze**: without this, `SetWaitingForBlockingInput` + `isDiploActive()` blocked `CvGame::update()` indefinitely. |
 | Trade | `Includes/TradeLogic.lua` | ✓ | ? | Verify method |
 | Goody hut reward (informational) | `GoodyHutPopup.lua` | ✓ | timer | `BUTTONPOPUP_GOODY_HUT_REWARD` |
-| Goody hut choice (picker promotion) | `ChooseGoodyHutReward.lua` | ✓ | timer | Auto-selects first valid option; only shown when unit has `PROMOTION_GOODY_HUT_PICKER` |
+| Goody hut choice (picker promotion) | `ChooseGoodyHutReward.lua` | ✓ | instant + C++ | `BUTTONPOPUP_CHOOSE_GOODY_HUT_REWARD`; only for a unit with `PROMOTION_GOODY_HUT_PICKER`. C++ (`CvGame::SetPendingGoodyHutChoice`) records the choice and sends `popup_choice_needed` / `choose_goody_hut_reward` with the options; LLM picks with `choose_goody_hut_reward`. `end_turn` and `force_end_turn` return `GOODY_HUT_CHOICE` until then. Pending choices are not saved. |
 | Great Work completed | `GreatWorkPopup.lua` | ✓ | instant | `BUTTONPOPUP_GREAT_WORK_COMPLETED_ACTIVE_PLAYER`; informational only |
 | Golden Age started | `GoldenAgePopup.lua` | ✓ | instant | `BUTTONPOPUP_GOLDEN_AGE_REWARD` (type 59); informational only |
 | "World's X-iest" ranking list | `WhosWinningPopup.lua` | ✓ | instant | `BUTTONPOPUP_WHOS_WINNING` (type 54); was missing from modinfo so base game version ran; converted from timer to instant |
