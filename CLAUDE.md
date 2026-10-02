@@ -84,7 +84,7 @@ For deeper post-game analysis: `python -m orchestrator.analyze_logs [--game-id I
 3. Search `CvMinorCivAI.cpp` / `CvPlayer.cpp` / `CvGame.cpp` for `AddPopup` calls with that type to understand when it fires and whether it also calls `AddNotification`.
 4. Search `(1) Community Patch/LUA/` for an existing Lua handler. If none, check the base game at `Program Files (x86)/Steam/steamapps/common/Sid Meier's Civilization V/Assets/DLC/Expansion2/UI/InGame/Popups/`.
 5. For **informational** popups: fire `Events.SerialEventGameMessagePopupProcessed.CallImmediate(type, 0)` at the top of `OnPopup` and return — never queue it. For **choice** popups: send options to the pipe first, then close on the incoming command.
-6. If creating a new file in `Core Files/Overrides/`, add an `import="1"` entry to the `.modinfo` (with md5 from `md5sum`) and copy to the installed MODS directory.
+6. If creating a new file in `Core Files/Overrides/`, add an `import="1"` entry to the `.modinfo` (with md5 from `md5sum`) then deploy with `scripts/build-and-deploy.ps1 -DeployOnly -NoClear`. If you copy by hand, copy the `.modinfo` too: an override file without its `import="1"` entry in the *installed* `.modinfo` is ignored, and the base-game version runs instead. Confirm with `diff -rq` between the repo and installed mod folders.
 7. Update `docs/popups.md`.
 
 ## Work Tracking

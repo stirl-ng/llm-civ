@@ -385,6 +385,9 @@ class CivMCPServer:
         "declare_war": ("_declare_war", {
             "player_id": "required int - player ID of the civ or city-state to declare war on",
         }),
+        "choose_goody_hut_reward": ("_choose_goody_hut_reward", {
+            "goody_id": "required int - goody_id of one of the offered rewards",
+        }),
         # Spatial awareness tools
         "get_visible_tiles": ("_get_visible_tiles", {}),
         "get_map_view": ("_get_map_view", {
@@ -659,6 +662,16 @@ class CivMCPServer:
         """
         player_id = self._require_param(args, "player_id", int)
         return self._send_pipe_request(request={"type": "declare_war", "player_id": player_id})
+
+    def _choose_goody_hut_reward(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Pick the reward for a goody hut popped by a unit that may choose its reward.
+
+        The options are sent in the popup_choice_needed message
+        (popup_type 'choose_goody_hut_reward'), and repeated in the end_turn
+        error and get_turn_blockers while the choice is pending.
+        """
+        goody_id = self._require_param(args, "goody_id", int)
+        return self._send_pipe_request(request={"type": "choose_goody_hut_reward", "goody_id": goody_id})
 
     def _choose_tech(self, args: dict[str, Any]) -> dict[str, Any]:
         """Select a technology to research.
