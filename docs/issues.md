@@ -36,8 +36,8 @@ Caveat for multi-LLM hotseat: the four `isHuman()`-only sites do not check the a
 
 ---
 
-## Notification timing / missed events
-Notifications sometimes appear at the end of the turn that generated them but are only visible at the start of the next. A worker being killed may go unacknowledged because the LLM only sees the notification one turn late. Need a better notification delivery model — options include buffering pending notifications into the next turn's briefing explicitly, or including prior-turn notifications in the briefing with a "from last turn" label.
+## Notification timing / missed events (STI-8, fix untested)
+Notifications from AI moves (e.g. a worker killed) could reach the LLM one turn late. Cause: `turn_start` was sent at the end of `CvGame::doTurn`, before the AI moved and before the human was activated, so the briefing was built before those notifications existed. Fix: `turn_start` is now sent from `CvPlayer::setTurnActive` when the active player's turn begins, and the runner labels notifications from an earlier turn as "after you ended it". See `docs/protocol.md`. Not yet tested in a live game: confirm that an AI attack's notification appears in that turn's `[Game Events]`, and that game start and load send no duplicate `turn_start`.
 
 ---
 

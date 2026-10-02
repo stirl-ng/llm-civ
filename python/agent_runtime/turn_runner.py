@@ -37,6 +37,14 @@ def build_assistant_message(response: GenerateResponse) -> dict[str, Any]:
     return msg
 
 
+def _format_notification(notif: dict[str, Any], current_turn: int) -> str:
+    """Label notifications that happened after the LLM ended an earlier turn."""
+    notif_turn = notif.get("turn")
+    if notif_turn is not None and notif_turn < current_turn:
+        return f"- (turn {notif_turn}, after you ended it) {notif['summary']}"
+    return f"- {notif['summary']}"
+
+
 def build_tool_result_message(tool_call: ToolCall, result: dict[str, Any]) -> dict[str, Any]:
     return {
         "role": "tool",
@@ -135,7 +143,7 @@ def run_turn(
         for n in new_notifs:
             seen_notification_uuids.add(n["uuid"])
         if new_notifs:
-            lines = [f"- {n['summary']}" for n in new_notifs]
+            lines = [_format_notification(n, ctx.turn) for n in new_notifs]
             event_msg = "**[Game Events]**\n" + "\n".join(lines)
             print(f"  [{iterations}] Game events: {[n['summary'] for n in new_notifs]}")
             messages.append({"role": "user", "content": event_msg})
