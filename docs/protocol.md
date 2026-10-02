@@ -124,11 +124,17 @@ Key:
       │ ─────────────────────────────────────────────► │
       │                                                │
       │         (AI turns process...)                  │
+      │  {"type": "notification", "turn": 8, ...}      │
+      │ ─────────────────────────────────────────────► │
       │                                                │
       │  {"type": "turn_start", "turn": 8, ...}        │
       │ ─────────────────────────────────────────────► │
       │                                                │
 ```
+
+`turn_start` is sent from `CvPlayer::setTurnActive` when the active player's turn begins, not at the end of `CvGame::doTurn`. With simultaneous turns, `doTurn` activates only the AI; their units move in `updateMoves`, and the human is activated after that. Sending `turn_start` at activation means every notification from AI moves and from the player's own turn processing is already on the pipe. The DLL sends at most one `turn_start` per (turn, player); the pipe-connect path also counts toward that limit.
+
+With sequential turns, the AI moves after the human within the same game turn. Those notifications carry the old turn number. The runner shows them at the start of the next turn, marked "after you ended it".
 
 ### Hooks (Async Events)
 
