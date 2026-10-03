@@ -44,6 +44,12 @@ Useful options:
 
 The run order is fixed in `conftest.py`: coverage, snapshots, reads, writes, turns.
 
+A schema only knows the reply shapes it has seen. If a run fails only because a reply took a shape the schema has not seen yet (a success where drafting saw a refusal), merge the logged replies instead of reloading and drafting again, then review the diff:
+
+```bash
+.venv/Scripts/python.exe -m dlltest.schema logs/dlltest/game_<game_id>.jsonl
+```
+
 ## When something fails
 
 - Each run logs the full exchange (requests, replies, events) to `python/logs/dlltest/game_<game_id>.jsonl`.
