@@ -1,0 +1,47 @@
+{
+  "available_techs": [
+    {
+      "cost": 23,
+      "id": 2,
+      "name": "Animal Husbandry",
+      "turns": 5
+    },
+    {
+      "cost": 23,
+      "id": 3,
+      "name": "Archery",
+      "turns": 5
+    },
+    {
+      "cost": 23,
+      "id": 4,
+      "name": "Mining",
+      "turns": 5
+    },
+    {
+      "cost": 35,
+      "id": 5,
+      "name": "Sailing",
+      "turns": 1
+    },
+    {
+      "cost": 35,
+      "id": 6,
+      "name": "Calendar",
+      "turns": 7
+    },
+    {
+      "cost": 35,
+      "id": 7,
+      "name": "Writing",
+      "turns": 7
+    }
+  ],
+  "current_research": {
+    "id": 5,
+    "name": "Sailing",
+    "turns_left": 1
+  },
+  "player_id": 0,
+  "type": "available_techs_result"
+}

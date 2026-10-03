@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "is_human": {
+      "type": "boolean"
+    },
+    "player_name": {
+      "type": "string"
+    },
+    "session_id": {
+      "type": "integer"
+    },
+    "state": {
+      "properties": {
+        "civsEver": {
+          "type": "integer"
+        },
+        "playersAlive": {
+          "type": "integer"
+        },
+        "turn": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "civsEver",
+        "playersAlive",
+        "turn"
+      ],
+      "type": "object"
+    },
+    "type": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "is_human",
+    "player_name",
+    "session_id",
+    "state",
+    "type"
+  ],
+  "title": "turn_complete",
+  "type": "object"
+}

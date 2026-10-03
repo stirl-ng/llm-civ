@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "player_id": {
+      "type": "integer"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "success": {
+      "type": "boolean"
+    },
+    "tech_id": {
+      "type": "integer"
+    },
+    "tech_name": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "player_id",
+    "request_id",
+    "success",
+    "tech_id",
+    "tech_name",
+    "type"
+  ],
+  "title": "choose_tech_result",
+  "type": "object"
+}

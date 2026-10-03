@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "can_do": {
+      "type": "boolean"
+    },
+    "control_type": {
+      "type": "integer"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "can_do",
+    "control_type",
+    "request_id",
+    "type"
+  ],
+  "title": "can_do_control_result",
+  "type": "object"
+}

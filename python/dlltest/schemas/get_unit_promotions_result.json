@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "request_id": {
+      "type": "string"
+    },
+    "success": {
+      "type": "boolean"
+    },
+    "type": {
+      "type": "string"
+    },
+    "units": {
+      "items": {
+        "properties": {
+          "available_promotions": {
+            "type": "array"
+          },
+          "experience": {
+            "type": "integer"
+          },
+          "experience_needed": {
+            "type": "integer"
+          },
+          "level": {
+            "type": "integer"
+          },
+          "promotion_ready": {
+            "type": "boolean"
+          },
+          "promotions": {
+            "items": {
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "promotion_id": {
+                  "type": "integer"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "promotion_id",
+                "type"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "unit_id": {
+            "type": "integer"
+          },
+          "unit_name": {
+            "type": "string"
+          },
+          "x": {
+            "type": "integer"
+          },
+          "y": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "available_promotions",
+          "experience",
+          "experience_needed",
+          "level",
+          "promotion_ready",
+          "promotions",
+          "unit_id",
+          "unit_name",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "request_id",
+    "success",
+    "type",
+    "units"
+  ],
+  "title": "get_unit_promotions_result",
+  "type": "object"
+}

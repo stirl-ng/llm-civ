@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "adoptable_policies": {
+      "items": {
+        "properties": {
+          "branch_id": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "branch_id",
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "adopted_policies": {
+      "items": {
+        "properties": {
+          "branch_id": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "branch_id",
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "culture": {
+      "type": "integer"
+    },
+    "next_policy_cost": {
+      "type": "integer"
+    },
+    "player_id": {
+      "type": "integer"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    },
+    "unlockable_branches": {
+      "items": {
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "unlocked_branches": {
+      "items": {
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "adoptable_policies",
+    "adopted_policies",
+    "culture",
+    "next_policy_cost",
+    "player_id",
+    "request_id",
+    "type",
+    "unlockable_branches",
+    "unlocked_branches"
+  ],
+  "title": "available_policies_result",
+  "type": "object"
+}

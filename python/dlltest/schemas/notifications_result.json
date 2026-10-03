@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "count": {
+      "type": "integer"
+    },
+    "notifications": {
+      "items": {
+        "properties": {
+          "dismissed": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "index": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "turn": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dismissed",
+          "id",
+          "index",
+          "message",
+          "summary",
+          "turn"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "player_id": {
+      "type": "integer"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "count",
+    "notifications",
+    "player_id",
+    "request_id",
+    "type"
+  ],
+  "title": "notifications_result",
+  "type": "object"
+}

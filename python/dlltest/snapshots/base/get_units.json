@@ -1,0 +1,79 @@
+{
+  "player_id": 0,
+  "turn": 12,
+  "type": "units_result",
+  "units": [
+    {
+      "activity": "AWAKE",
+      "can_move": true,
+      "damage": 0,
+      "experience": 0,
+      "id": 1002,
+      "is_combat_unit": true,
+      "is_embarked": false,
+      "is_trespassing": false,
+      "level": 1,
+      "max_hit_points": 100,
+      "max_moves": 120,
+      "moves_remaining": 120,
+      "plot": {
+        "feature_type": -1,
+        "terrain_type": 1
+      },
+      "promotion_ready": false,
+      "territory_owner": 0,
+      "unit_type": 83,
+      "unit_type_name": "Warrior",
+      "x": 49,
+      "y": 17
+    },
+    {
+      "activity": "AWAKE",
+      "can_move": true,
+      "damage": 0,
+      "experience": 0,
+      "id": 1049,
+      "is_combat_unit": true,
+      "is_embarked": false,
+      "is_trespassing": false,
+      "level": 1,
+      "max_hit_points": 100,
+      "max_moves": 120,
+      "moves_remaining": 120,
+      "plot": {
+        "feature_type": -1,
+        "terrain_type": 1
+      },
+      "promotion_ready": false,
+      "territory_owner": 0,
+      "unit_type": 82,
+      "unit_type_name": "Scout",
+      "x": 50,
+      "y": 18
+    },
+    {
+      "activity": "AWAKE",
+      "can_move": true,
+      "damage": 0,
+      "experience": 0,
+      "id": 1056,
+      "is_combat_unit": false,
+      "is_embarked": false,
+      "is_trespassing": false,
+      "level": 1,
+      "max_hit_points": 100,
+      "max_moves": 120,
+      "moves_remaining": 120,
+      "plot": {
+        "feature_type": 5,
+        "terrain_type": 1
+      },
+      "promotion_ready": false,
+      "territory_owner": 0,
+      "unit_type": 1,
+      "unit_type_name": "Worker",
+      "x": 50,
+      "y": 16
+    }
+  ]
+}

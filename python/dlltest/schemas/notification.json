@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "game_data_index": {
+      "type": "integer"
+    },
+    "lookup_index": {
+      "type": "integer"
+    },
+    "message": {
+      "type": "string"
+    },
+    "notification_type": {
+      "type": "integer"
+    },
+    "session_id": {
+      "type": "integer"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    },
+    "x": {
+      "type": "integer"
+    },
+    "y": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "lookup_index",
+    "message",
+    "notification_type",
+    "session_id",
+    "summary",
+    "type"
+  ],
+  "title": "notification",
+  "type": "object"
+}

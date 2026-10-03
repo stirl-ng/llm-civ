@@ -1,0 +1,38 @@
+{
+  "cities": [
+    {
+      "food": {
+        "stored": 14,
+        "threshold": 16,
+        "turns_to_growth": 1
+      },
+      "id": 1025,
+      "is_capital": true,
+      "is_puppet": false,
+      "name": "Paris",
+      "population": 2,
+      "production": {
+        "building_type": 40,
+        "cost": 40,
+        "name": "Granary",
+        "progress": 10,
+        "turns_left": 5,
+        "type": "building"
+      },
+      "strength": 1630,
+      "x": 50,
+      "y": 17,
+      "yields_per_turn": {
+        "culture_times100": 200,
+        "faith_times100": 0,
+        "food_times100": 200,
+        "gold_times100": 400,
+        "production_times100": 600,
+        "science_times100": 500
+      }
+    }
+  ],
+  "player_id": 0,
+  "turn": 12,
+  "type": "cities_result"
+}

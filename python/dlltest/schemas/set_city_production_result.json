@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "city_id": {
+      "type": "integer"
+    },
+    "error": {
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "item_id": {
+      "type": "integer"
+    },
+    "item_name": {
+      "type": "string"
+    },
+    "order_type": {
+      "type": "integer"
+    },
+    "player_id": {
+      "type": "integer"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "success": {
+      "type": "boolean"
+    },
+    "type": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_id",
+    "success",
+    "type"
+  ],
+  "title": "set_city_production_result",
+  "type": "object"
+}

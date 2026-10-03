@@ -1,0 +1,320 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "active_player_id": {
+      "type": "integer"
+    },
+    "players": {
+      "items": {
+        "properties": {
+          "civ": {
+            "type": "string"
+          },
+          "is_human": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "player_id": {
+            "type": "integer"
+          },
+          "stats": {
+            "properties": {
+              "approval": {
+                "type": "integer"
+              },
+              "food": {
+                "type": "integer"
+              },
+              "gold": {
+                "type": "integer"
+              },
+              "land": {
+                "type": "integer"
+              },
+              "literacy": {
+                "type": "integer"
+              },
+              "military": {
+                "type": "integer"
+              },
+              "population": {
+                "type": "integer"
+              },
+              "production": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "approval",
+              "food",
+              "gold",
+              "land",
+              "literacy",
+              "military",
+              "population",
+              "production"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "civ",
+          "is_human",
+          "name",
+          "player_id",
+          "stats"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "rankings": {
+      "properties": {
+        "approval": {
+          "properties": {
+            "average": {
+              "type": "integer"
+            },
+            "best": {
+              "type": "integer"
+            },
+            "best_player": {
+              "type": "integer"
+            },
+            "worst": {
+              "type": "integer"
+            },
+            "worst_player": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "average",
+            "best",
+            "best_player",
+            "worst",
+            "worst_player"
+          ],
+          "type": "object"
+        },
+        "food": {
+          "properties": {
+            "average": {
+              "type": "integer"
+            },
+            "best": {
+              "type": "integer"
+            },
+            "best_player": {
+              "type": "integer"
+            },
+            "worst": {
+              "type": "integer"
+            },
+            "worst_player": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "average",
+            "best",
+            "best_player",
+            "worst",
+            "worst_player"
+          ],
+          "type": "object"
+        },
+        "gold": {
+          "properties": {
+            "average": {
+              "type": "integer"
+            },
+            "best": {
+              "type": "integer"
+            },
+            "best_player": {
+              "type": "integer"
+            },
+            "worst": {
+              "type": "integer"
+            },
+            "worst_player": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "average",
+            "best",
+            "best_player",
+            "worst",
+            "worst_player"
+          ],
+          "type": "object"
+        },
+        "land": {
+          "properties": {
+            "average": {
+              "type": "integer"
+            },
+            "best": {
+              "type": "integer"
+            },
+            "best_player": {
+              "type": "integer"
+            },
+            "worst": {
+              "type": "integer"
+            },
+            "worst_player": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "average",
+            "best",
+            "best_player",
+            "worst",
+            "worst_player"
+          ],
+          "type": "object"
+        },
+        "literacy": {
+          "properties": {
+            "average": {
+              "type": "integer"
+            },
+            "best": {
+              "type": "integer"
+            },
+            "best_player": {
+              "type": "integer"
+            },
+            "worst": {
+              "type": "integer"
+            },
+            "worst_player": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "average",
+            "best",
+            "best_player",
+            "worst",
+            "worst_player"
+          ],
+          "type": "object"
+        },
+        "military": {
+          "properties": {
+            "average": {
+              "type": "integer"
+            },
+            "best": {
+              "type": "integer"
+            },
+            "best_player": {
+              "type": "integer"
+            },
+            "worst": {
+              "type": "integer"
+            },
+            "worst_player": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "average",
+            "best",
+            "best_player",
+            "worst",
+            "worst_player"
+          ],
+          "type": "object"
+        },
+        "population": {
+          "properties": {
+            "average": {
+              "type": "integer"
+            },
+            "best": {
+              "type": "integer"
+            },
+            "best_player": {
+              "type": "integer"
+            },
+            "worst": {
+              "type": "integer"
+            },
+            "worst_player": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "average",
+            "best",
+            "best_player",
+            "worst",
+            "worst_player"
+          ],
+          "type": "object"
+        },
+        "production": {
+          "properties": {
+            "average": {
+              "type": "integer"
+            },
+            "best": {
+              "type": "integer"
+            },
+            "best_player": {
+              "type": "integer"
+            },
+            "worst": {
+              "type": "integer"
+            },
+            "worst_player": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "average",
+            "best",
+            "best_player",
+            "worst",
+            "worst_player"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "approval",
+        "food",
+        "gold",
+        "land",
+        "literacy",
+        "military",
+        "population",
+        "production"
+      ],
+      "type": "object"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "active_player_id",
+    "players",
+    "rankings",
+    "request_id",
+    "type"
+  ],
+  "title": "demographics_result",
+  "type": "object"
+}

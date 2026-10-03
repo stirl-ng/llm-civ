@@ -1,0 +1,71 @@
+{
+  "count": 8,
+  "notifications": [
+    {
+      "dismissed": true,
+      "id": 0,
+      "index": 0,
+      "message": "Paris is ready for a new construction project.",
+      "summary": "Paris is ready for a new construction project.",
+      "turn": 0
+    },
+    {
+      "dismissed": true,
+      "id": 1,
+      "index": 1,
+      "message": "You may select a new research project.",
+      "summary": "Choose Research",
+      "turn": 0
+    },
+    {
+      "dismissed": true,
+      "id": 2,
+      "index": 2,
+      "message": "Paris is ready for a new construction project.",
+      "summary": "Paris is ready for a new construction project.",
+      "turn": 3
+    },
+    {
+      "dismissed": true,
+      "id": 3,
+      "index": 3,
+      "message": "The City of Paris now has 2 [ICON_CITIZEN] Citizens! The new Citizen will automatically work the land near the City for additional [ICON_FOOD] Food, [ICON_PRODUCTION] Production or [ICON_GOLD] Gold.",
+      "summary": "Paris has Grown!",
+      "turn": 5
+    },
+    {
+      "dismissed": true,
+      "id": 4,
+      "index": 4,
+      "message": "What would you like to research next?",
+      "summary": "What would you like to research next?",
+      "turn": 6
+    },
+    {
+      "dismissed": true,
+      "id": 5,
+      "index": 5,
+      "message": "You have accumulated enough Culture to adopt a new Social Policy!",
+      "summary": "May adopt Policy",
+      "turn": 10
+    },
+    {
+      "dismissed": true,
+      "id": 6,
+      "index": 6,
+      "message": "Paris is ready for a new construction project.",
+      "summary": "Paris is ready for a new construction project.",
+      "turn": 11
+    },
+    {
+      "dismissed": true,
+      "id": 7,
+      "index": 7,
+      "message": "An unknown civilization has started worshipping a pantheon of gods. They have chosen the belief: [COLOR_POSITIVE_TEXT]Desert Folklore[ENDCOLOR] (+1 [ICON_PEACE] Faith from Desert tiles)",
+      "summary": "Pantheon Founded",
+      "turn": 11
+    }
+  ],
+  "player_id": 0,
+  "type": "notifications_result"
+}

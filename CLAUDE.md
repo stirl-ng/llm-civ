@@ -54,6 +54,10 @@ Commit often — after each logical change, not just at the end of a session. Ea
 
 **Lua naming:** timer constants `AUTO_CLOSE_SECONDS`, timer variables `g_autoCloseTimer`, initial state tracking `g_initialXxx`.
 
+## Testing DLL Changes
+
+After a DLL change, run the pipe test suite instead of letting an agent play: build, load `dlltest_base` from **Mods → Next → Load Game**, then `cd python && .venv/Scripts/python.exe -m pytest dlltest -v`. Reload the save between runs. A new pipe command needs a test (`test_coverage.py` enforces it). See `docs/testing.md`.
+
 ## Runtime Logs
 
 When the system is launched via `python launch.py`, all process output is captured to `python/logs/`:
@@ -94,6 +98,7 @@ Bugs, gaps, and work items are tracked in Linear: project **LLM-Civ** in team **
 ## Documentation
 
 - `docs/target-architecture.md` — **v2 direction; source of truth**
+- `docs/testing.md` — DLL test harness (`python/dlltest/`): the build → load → pytest loop
 - `docs/systems.md` — v1 system inventory with status ratings
 - `docs/issues.md` — active bugs and known gaps (not here)
 - `docs/todo.md` — near-term work items

@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "request_id": {
+      "type": "string"
+    },
+    "result": {
+      "properties": {
+        "build_name": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "build_name",
+        "message"
+      ],
+      "type": "object"
+    },
+    "state_delta": {
+      "properties": {
+        "build_type": {
+          "type": "integer"
+        },
+        "unit_id": {
+          "type": "integer"
+        },
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "build_type",
+        "unit_id",
+        "x",
+        "y"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "type": "boolean"
+    },
+    "type": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_id",
+    "result",
+    "state_delta",
+    "success",
+    "type"
+  ],
+  "title": "unit_build_result",
+  "type": "object"
+}

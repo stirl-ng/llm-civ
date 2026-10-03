@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "city_id": {
+      "type": "integer"
+    },
+    "city_name": {
+      "type": "string"
+    },
+    "constructable_buildings": {
+      "items": {
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "turns": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "turns"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "creatable_projects": {
+      "type": "array"
+    },
+    "current_production": {
+      "properties": {
+        "item_id": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "order_type": {
+          "type": "integer"
+        },
+        "turns_remaining": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "item_id",
+        "name",
+        "order_type",
+        "turns_remaining"
+      ],
+      "type": "object"
+    },
+    "maintainable_processes": {
+      "type": "array"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "trainable_units": {
+      "items": {
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "turns": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "turns"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "type": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "city_id",
+    "city_name",
+    "constructable_buildings",
+    "creatable_projects",
+    "current_production",
+    "maintainable_processes",
+    "request_id",
+    "trainable_units",
+    "type"
+  ],
+  "title": "city_production_result",
+  "type": "object"
+}

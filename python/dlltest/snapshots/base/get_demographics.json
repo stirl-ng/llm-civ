@@ -1,0 +1,160 @@
+{
+  "active_player_id": 0,
+  "players": [
+    {
+      "civ": "French Empire",
+      "is_human": true,
+      "name": "Napoleon",
+      "player_id": 0,
+      "stats": {
+        "approval": 9,
+        "food": 2,
+        "gold": 4,
+        "land": 8,
+        "literacy": 2,
+        "military": 13,
+        "population": 6000,
+        "production": 6
+      }
+    },
+    {
+      "civ": "Polynesian Empire",
+      "is_human": false,
+      "name": "Kamehameha",
+      "player_id": 1,
+      "stats": {
+        "approval": 12,
+        "food": 1,
+        "gold": 5,
+        "land": 8,
+        "literacy": 3,
+        "military": 11,
+        "population": 6000,
+        "production": 4
+      }
+    },
+    {
+      "civ": "Iroquois Empire",
+      "is_human": false,
+      "name": "Hiawatha",
+      "player_id": 2,
+      "stats": {
+        "approval": 12,
+        "food": 1,
+        "gold": 5,
+        "land": 8,
+        "literacy": 3,
+        "military": 8,
+        "population": 6000,
+        "production": 5
+      }
+    },
+    {
+      "civ": "Republic of Venice",
+      "is_human": false,
+      "name": "Enrico Dandolo",
+      "player_id": 3,
+      "stats": {
+        "approval": 13,
+        "food": 2,
+        "gold": 4,
+        "land": 8,
+        "literacy": 3,
+        "military": 8,
+        "population": 6000,
+        "production": 4
+      }
+    },
+    {
+      "civ": "Mayan Empire",
+      "is_human": false,
+      "name": "Pacal",
+      "player_id": 4,
+      "stats": {
+        "approval": 12,
+        "food": 1,
+        "gold": 7,
+        "land": 8,
+        "literacy": 2,
+        "military": 8,
+        "population": 6000,
+        "production": 5
+      }
+    },
+    {
+      "civ": "Dutch Empire",
+      "is_human": false,
+      "name": "William",
+      "player_id": 5,
+      "stats": {
+        "approval": 13,
+        "food": 2,
+        "gold": 7,
+        "land": 8,
+        "literacy": 2,
+        "military": 8,
+        "population": 6000,
+        "production": 4
+      }
+    }
+  ],
+  "rankings": {
+    "approval": {
+      "average": 11,
+      "best": 13,
+      "best_player": 3,
+      "worst": 9,
+      "worst_player": 0
+    },
+    "food": {
+      "average": 1,
+      "best": 2,
+      "best_player": 0,
+      "worst": 1,
+      "worst_player": 1
+    },
+    "gold": {
+      "average": 5,
+      "best": 7,
+      "best_player": 4,
+      "worst": 4,
+      "worst_player": 0
+    },
+    "land": {
+      "average": 8,
+      "best": 8,
+      "best_player": 0,
+      "worst": 8,
+      "worst_player": 0
+    },
+    "literacy": {
+      "average": 2,
+      "best": 3,
+      "best_player": 1,
+      "worst": 2,
+      "worst_player": 0
+    },
+    "military": {
+      "average": 9,
+      "best": 13,
+      "best_player": 0,
+      "worst": 8,
+      "worst_player": 2
+    },
+    "population": {
+      "average": 6000,
+      "best": 6000,
+      "best_player": 0,
+      "worst": 6000,
+      "worst_player": 0
+    },
+    "production": {
+      "average": 4,
+      "best": 6,
+      "best_player": 0,
+      "worst": 4,
+      "worst_player": 1
+    }
+  },
+  "type": "demographics_result"
+}

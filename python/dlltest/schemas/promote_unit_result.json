@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "error": {
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "success": {
+      "type": "boolean"
+    },
+    "type": {
+      "type": "string"
+    },
+    "unit": {
+      "properties": {
+        "available_promotions": {
+          "type": "array"
+        },
+        "experience": {
+          "type": "integer"
+        },
+        "experience_needed": {
+          "type": "integer"
+        },
+        "level": {
+          "type": "integer"
+        },
+        "promotion_ready": {
+          "type": "boolean"
+        },
+        "promotions": {
+          "type": "array"
+        },
+        "unit_id": {
+          "type": "integer"
+        },
+        "unit_name": {
+          "type": "string"
+        },
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "available_promotions",
+        "experience",
+        "experience_needed",
+        "level",
+        "promotion_ready",
+        "promotions",
+        "unit_id",
+        "unit_name",
+        "x",
+        "y"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "error",
+    "request_id",
+    "success",
+    "type",
+    "unit"
+  ],
+  "title": "promote_unit_result",
+  "type": "object"
+}

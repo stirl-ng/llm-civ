@@ -1,0 +1,39 @@
+{
+  "culture": {
+    "current_times100": 400,
+    "next_policy_cost": 10,
+    "per_turn_times100": 200
+  },
+  "faith": {
+    "current_times100": 0,
+    "per_turn_times100": 0
+  },
+  "gold": {
+    "current_times100": 3700,
+    "per_turn_times100": 300
+  },
+  "golden_age": {
+    "is_active": false,
+    "progress_threshold": 335,
+    "progress_times100": 11300,
+    "turns_remaining": 0
+  },
+  "happiness": {
+    "excess": 9,
+    "is_empire_unhappy": false
+  },
+  "player_id": 0,
+  "science": {
+    "per_turn_times100": 500
+  },
+  "tourism": {
+    "per_turn": 0
+  },
+  "trade_routes": {
+    "international_available": 0,
+    "international_used": 0
+  },
+  "turn": 12,
+  "turn_string": "3280 BC",
+  "type": "player_status_result"
+}

@@ -1,0 +1,31 @@
+{
+  "blockers": [
+    {
+      "type": "ENDTURN_BLOCKING_UNITS",
+      "type_id": 3,
+      "unit_id": 1002,
+      "unit_name": "Warrior",
+      "x": 49,
+      "y": 17
+    },
+    {
+      "type": "ENDTURN_BLOCKING_UNITS",
+      "type_id": 3,
+      "unit_id": 1049,
+      "unit_name": "Scout",
+      "x": 50,
+      "y": 18
+    },
+    {
+      "type": "ENDTURN_BLOCKING_UNITS",
+      "type_id": 3,
+      "unit_id": 1056,
+      "unit_name": "Worker",
+      "x": 50,
+      "y": 16
+    }
+  ],
+  "player_id": 0,
+  "turn": 12,
+  "type": "turn_blockers_result"
+}

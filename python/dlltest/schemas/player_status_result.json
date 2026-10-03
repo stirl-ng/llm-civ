@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "culture": {
+      "properties": {
+        "current_times100": {
+          "type": "integer"
+        },
+        "next_policy_cost": {
+          "type": "integer"
+        },
+        "per_turn_times100": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "current_times100",
+        "next_policy_cost",
+        "per_turn_times100"
+      ],
+      "type": "object"
+    },
+    "faith": {
+      "properties": {
+        "current_times100": {
+          "type": "integer"
+        },
+        "per_turn_times100": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "current_times100",
+        "per_turn_times100"
+      ],
+      "type": "object"
+    },
+    "gold": {
+      "properties": {
+        "current_times100": {
+          "type": "integer"
+        },
+        "per_turn_times100": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "current_times100",
+        "per_turn_times100"
+      ],
+      "type": "object"
+    },
+    "golden_age": {
+      "properties": {
+        "is_active": {
+          "type": "boolean"
+        },
+        "progress_threshold": {
+          "type": "integer"
+        },
+        "progress_times100": {
+          "type": "integer"
+        },
+        "turns_remaining": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "is_active",
+        "progress_threshold",
+        "progress_times100",
+        "turns_remaining"
+      ],
+      "type": "object"
+    },
+    "happiness": {
+      "properties": {
+        "excess": {
+          "type": "integer"
+        },
+        "is_empire_unhappy": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "excess",
+        "is_empire_unhappy"
+      ],
+      "type": "object"
+    },
+    "player_id": {
+      "type": "integer"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "science": {
+      "properties": {
+        "per_turn_times100": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "per_turn_times100"
+      ],
+      "type": "object"
+    },
+    "tourism": {
+      "properties": {
+        "per_turn": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "per_turn"
+      ],
+      "type": "object"
+    },
+    "trade_routes": {
+      "properties": {
+        "international_available": {
+          "type": "integer"
+        },
+        "international_used": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "international_available",
+        "international_used"
+      ],
+      "type": "object"
+    },
+    "turn": {
+      "type": "integer"
+    },
+    "turn_string": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "culture",
+    "faith",
+    "gold",
+    "golden_age",
+    "happiness",
+    "player_id",
+    "request_id",
+    "science",
+    "tourism",
+    "trade_routes",
+    "turn",
+    "turn_string",
+    "type"
+  ],
+  "title": "player_status_result",
+  "type": "object"
+}

@@ -1,0 +1,12 @@
+# Test saves. Each is a modded save: start it from Mods > Next > Load Game.
+# Modded games save under ModdedSaves/, not Saves/.
+#
+# game_id is CvPreGame::mapRandomSeed(). It is stable for a save, so the
+# harness uses it to check which save is loaded. turn is the turn the save
+# starts on; a different turn means the game has moved on, so reload it.
+
+saves:
+  base:
+    file: saves/base.Civ5Save
+    game_id: 696192423
+    turn: 12

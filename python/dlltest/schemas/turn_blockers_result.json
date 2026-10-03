@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "blockers": {
+      "items": {
+        "properties": {
+          "notification_index": {
+            "type": "integer"
+          },
+          "type": {
+            "type": "string"
+          },
+          "type_id": {
+            "type": "integer"
+          },
+          "unit_id": {
+            "type": "integer"
+          },
+          "unit_name": {
+            "type": "string"
+          },
+          "x": {
+            "type": "integer"
+          },
+          "y": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "type",
+          "type_id"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "player_id": {
+      "type": "integer"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "turn": {
+      "type": "integer"
+    },
+    "type": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "blockers",
+    "player_id",
+    "request_id",
+    "turn",
+    "type"
+  ],
+  "title": "turn_blockers_result",
+  "type": "object"
+}

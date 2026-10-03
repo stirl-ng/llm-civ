@@ -1,0 +1,10 @@
+{
+  "success": true,
+  "tiles": [],
+  "type": "unit_build_options_result",
+  "unit_id": 1002,
+  "unit_position": {
+    "x": 49,
+    "y": 17
+  }
+}

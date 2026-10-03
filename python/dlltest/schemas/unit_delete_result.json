@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "error": {
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "result": {
+      "properties": {
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "type": "object"
+    },
+    "state_delta": {
+      "properties": {
+        "deleted": {
+          "type": "boolean"
+        },
+        "unit_id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "deleted",
+        "unit_id"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "type": "boolean"
+    },
+    "type": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_id",
+    "success",
+    "type"
+  ],
+  "title": "unit_delete_result",
+  "type": "object"
+}
