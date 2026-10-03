@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "player_id": {
+      "type": "integer"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "turn": {
+      "type": "integer"
+    },
+    "type": {
+      "type": "string"
+    },
+    "units": {
+      "items": {
+        "properties": {
+          "activity": {
+            "type": "string"
+          },
+          "build_name": {
+            "type": "string"
+          },
+          "can_move": {
+            "type": "boolean"
+          },
+          "damage": {
+            "type": "integer"
+          },
+          "experience": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "is_combat_unit": {
+            "type": "boolean"
+          },
+          "is_embarked": {
+            "type": "boolean"
+          },
+          "is_trespassing": {
+            "type": "boolean"
+          },
+          "level": {
+            "type": "integer"
+          },
+          "max_hit_points": {
+            "type": "integer"
+          },
+          "max_moves": {
+            "type": "integer"
+          },
+          "mission": {
+            "type": "string"
+          },
+          "mission_target": {
+            "properties": {
+              "x": {
+                "type": "integer"
+              },
+              "y": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "type": "object"
+          },
+          "moves_remaining": {
+            "type": "integer"
+          },
+          "plot": {
+            "properties": {
+              "feature_type": {
+                "type": "integer"
+              },
+              "terrain_type": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "feature_type",
+              "terrain_type"
+            ],
+            "type": "object"
+          },
+          "promotion_ready": {
+            "type": "boolean"
+          },
+          "territory_owner": {
+            "type": "integer"
+          },
+          "unit_type": {
+            "type": "integer"
+          },
+          "unit_type_name": {
+            "type": "string"
+          },
+          "x": {
+            "type": "integer"
+          },
+          "y": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "activity",
+          "can_move",
+          "damage",
+          "experience",
+          "id",
+          "is_combat_unit",
+          "is_embarked",
+          "is_trespassing",
+          "level",
+          "max_hit_points",
+          "max_moves",
+          "moves_remaining",
+          "plot",
+          "promotion_ready",
+          "territory_owner",
+          "unit_type",
+          "unit_type_name",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "player_id",
+    "request_id",
+    "turn",
+    "type",
+    "units"
+  ],
+  "title": "units_result",
+  "type": "object"
+}

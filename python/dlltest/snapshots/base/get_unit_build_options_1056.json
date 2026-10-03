@@ -1,0 +1,41 @@
+{
+  "success": true,
+  "tiles": [
+    {
+      "available_builds": [
+        {
+          "build_name": "Construct a [LINK=IMPROVEMENT_FARM]Farm[\\LINK]",
+          "build_type": 2,
+          "improvement_name": "Farm",
+          "turns_required": 402
+        }
+      ],
+      "current_improvement": -1,
+      "feature_type": -1,
+      "terrain_type": 1,
+      "x": 49,
+      "y": 17
+    },
+    {
+      "available_builds": [
+        {
+          "build_name": "Construct a [LINK=IMPROVEMENT_FARM]Farm[\\LINK]",
+          "build_type": 2,
+          "improvement_name": "Farm",
+          "turns_required": 402
+        }
+      ],
+      "current_improvement": -1,
+      "feature_type": -1,
+      "terrain_type": 1,
+      "x": 50,
+      "y": 18
+    }
+  ],
+  "type": "unit_build_options_result",
+  "unit_id": 1056,
+  "unit_position": {
+    "x": 50,
+    "y": 16
+  }
+}

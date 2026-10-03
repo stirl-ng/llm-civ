@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "blockers": {
+      "items": {
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "type_id": {
+            "type": "integer"
+          },
+          "unit_id": {
+            "type": "integer"
+          },
+          "unit_name": {
+            "type": "string"
+          },
+          "x": {
+            "type": "integer"
+          },
+          "y": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "type",
+          "type_id",
+          "unit_id",
+          "unit_name",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "game_id": {
+      "type": "integer"
+    },
+    "is_human": {
+      "type": "boolean"
+    },
+    "player_id": {
+      "type": "integer"
+    },
+    "player_name": {
+      "type": "string"
+    },
+    "session_id": {
+      "type": "integer"
+    },
+    "state": {
+      "properties": {
+        "civsEver": {
+          "type": "integer"
+        },
+        "playersAlive": {
+          "type": "integer"
+        },
+        "turn": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "civsEver",
+        "playersAlive",
+        "turn"
+      ],
+      "type": "object"
+    },
+    "turn": {
+      "type": "integer"
+    },
+    "type": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "blockers",
+    "game_id",
+    "is_human",
+    "player_id",
+    "player_name",
+    "session_id",
+    "state",
+    "turn",
+    "type"
+  ],
+  "title": "turn_start",
+  "type": "object"
+}

@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "moves_remaining": {
+      "type": "integer"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "success": {
+      "type": "boolean"
+    },
+    "tiles": {
+      "items": {
+        "properties": {
+          "can_attack": {
+            "type": "boolean"
+          },
+          "can_enter": {
+            "type": "boolean"
+          },
+          "is_enemy_unit": {
+            "type": "boolean"
+          },
+          "moves_left": {
+            "type": "integer"
+          },
+          "path_length": {
+            "type": "integer"
+          },
+          "x": {
+            "type": "integer"
+          },
+          "y": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "can_attack",
+          "can_enter",
+          "moves_left",
+          "path_length",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "type": {
+      "type": "string"
+    },
+    "unit_id": {
+      "type": "integer"
+    },
+    "unit_position": {
+      "properties": {
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "moves_remaining",
+    "request_id",
+    "success",
+    "tiles",
+    "type",
+    "unit_id",
+    "unit_position"
+  ],
+  "title": "reachable_tiles_result",
+  "type": "object"
+}

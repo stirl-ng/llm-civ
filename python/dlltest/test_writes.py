@@ -209,7 +209,17 @@ def test_do_control_agrees_with_can_do_control(call, dll):
 # --- Last: removes a unit ------------------------------------------------------
 
 
+def test_unit_delete_refused_without_moves(call):
+    # canScrap() needs moves left; the worker spent them moving and starting a build.
+    spent = next((u for u in units_by_id(call).values() if u["moves_remaining"] == 0), None)
+    if spent is None:
+        pytest.skip("every unit still has moves")
+    assert_refused(result(call, "unit_delete", unit_id=spent["id"]), "CANNOT_DELETE")
+
+
 def test_unit_delete(call):
-    worker = unit_named(call, "Worker")
-    assert result(call, "unit_delete", unit_id=worker["id"])["success"] is True
-    assert worker["id"] not in units_by_id(call)
+    unit = next((u for u in units_by_id(call).values() if u["moves_remaining"] > 0), None)
+    if unit is None:
+        pytest.skip("no unit has moves left to be disbanded")
+    assert result(call, "unit_delete", unit_id=unit["id"])["success"] is True
+    assert unit["id"] not in units_by_id(call)

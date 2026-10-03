@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "map_height": {
+      "type": "integer"
+    },
+    "map_width": {
+      "type": "integer"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "tiles": {
+      "items": {
+        "properties": {
+          "feature_type": {
+            "type": "integer"
+          },
+          "is_hills": {
+            "type": "boolean"
+          },
+          "is_mountain": {
+            "type": "boolean"
+          },
+          "is_river": {
+            "type": "boolean"
+          },
+          "is_visible": {
+            "type": "boolean"
+          },
+          "is_water": {
+            "type": "boolean"
+          },
+          "owner_id": {
+            "type": "integer"
+          },
+          "plot_type": {
+            "type": "integer"
+          },
+          "resource_name": {
+            "type": "string"
+          },
+          "resource_quantity": {
+            "type": "integer"
+          },
+          "resource_type": {
+            "type": "integer"
+          },
+          "route_pillaged": {
+            "type": "boolean"
+          },
+          "route_type": {
+            "type": "integer"
+          },
+          "terrain_type": {
+            "type": "integer"
+          },
+          "x": {
+            "type": "integer"
+          },
+          "y": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "feature_type",
+          "is_hills",
+          "is_mountain",
+          "is_visible",
+          "is_water",
+          "plot_type",
+          "terrain_type",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "turn": {
+      "type": "integer"
+    },
+    "type": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "map_height",
+    "map_width",
+    "request_id",
+    "tiles",
+    "turn",
+    "type"
+  ],
+  "title": "visible_tiles_result",
+  "type": "object"
+}

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "belief_id": {
+      "type": "integer"
+    },
+    "belief_name": {
+      "type": "string"
+    },
+    "player_id": {
+      "type": "integer"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "success": {
+      "type": "boolean"
+    },
+    "type": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "belief_id",
+    "belief_name",
+    "player_id",
+    "request_id",
+    "success",
+    "type"
+  ],
+  "title": "select_pantheon_result",
+  "type": "object"
+}

@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "request_id": {
+      "type": "string"
+    },
+    "success": {
+      "type": "boolean"
+    },
+    "tiles": {
+      "items": {
+        "properties": {
+          "available_builds": {
+            "items": {
+              "properties": {
+                "build_name": {
+                  "type": "string"
+                },
+                "build_type": {
+                  "type": "integer"
+                },
+                "improvement_name": {
+                  "type": "string"
+                },
+                "turns_required": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "build_name",
+                "build_type",
+                "improvement_name",
+                "turns_required"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "current_improvement": {
+            "type": "integer"
+          },
+          "feature_type": {
+            "type": "integer"
+          },
+          "terrain_type": {
+            "type": "integer"
+          },
+          "x": {
+            "type": "integer"
+          },
+          "y": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "available_builds",
+          "current_improvement",
+          "feature_type",
+          "terrain_type",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "type": {
+      "type": "string"
+    },
+    "unit_id": {
+      "type": "integer"
+    },
+    "unit_position": {
+      "properties": {
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "request_id",
+    "success",
+    "tiles",
+    "type",
+    "unit_id",
+    "unit_position"
+  ],
+  "title": "unit_build_options_result",
+  "type": "object"
+}

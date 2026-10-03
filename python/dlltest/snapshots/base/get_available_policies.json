@@ -1,0 +1,21 @@
+{
+  "adoptable_policies": [],
+  "adopted_policies": [
+    {
+      "branch_id": -1,
+      "id": 0,
+      "name": "Liberty"
+    }
+  ],
+  "culture": 4,
+  "next_policy_cost": 10,
+  "player_id": 0,
+  "type": "available_policies_result",
+  "unlockable_branches": [],
+  "unlocked_branches": [
+    {
+      "id": 1,
+      "name": "Liberty"
+    }
+  ]
+}

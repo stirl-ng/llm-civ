@@ -1,0 +1,18 @@
+{
+  "success": true,
+  "type": "get_unit_promotions_result",
+  "units": [
+    {
+      "available_promotions": [],
+      "experience": 0,
+      "experience_needed": 10,
+      "level": 1,
+      "promotion_ready": false,
+      "promotions": [],
+      "unit_id": 1002,
+      "unit_name": "Warrior",
+      "x": 49,
+      "y": 17
+    }
+  ]
+}

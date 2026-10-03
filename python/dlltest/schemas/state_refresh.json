@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "request_id": {
+      "type": "string"
+    },
+    "state": {
+      "properties": {
+        "activePlayer": {
+          "type": "integer"
+        },
+        "turn": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "activePlayer",
+        "turn"
+      ],
+      "type": "object"
+    },
+    "type": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_id",
+    "state",
+    "type"
+  ],
+  "title": "state_refresh",
+  "type": "object"
+}

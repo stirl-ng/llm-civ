@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "player_id": {
+      "type": "integer"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "turn": {
+      "type": "integer"
+    },
+    "type": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "player_id",
+    "request_id",
+    "turn",
+    "type"
+  ],
+  "title": "force_end_turn_ack",
+  "type": "object"
+}

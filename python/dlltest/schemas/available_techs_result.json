@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "available_techs": {
+      "items": {
+        "properties": {
+          "cost": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "turns": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cost",
+          "id",
+          "name",
+          "turns"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "current_research": {
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "turns_left": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "turns_left"
+      ],
+      "type": [
+        "null",
+        "object"
+      ]
+    },
+    "player_id": {
+      "type": "integer"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "available_techs",
+    "current_research",
+    "player_id",
+    "request_id",
+    "type"
+  ],
+  "title": "available_techs_result",
+  "type": "object"
+}

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "player_id": {
+      "type": "integer"
+    },
+    "religion_id": {
+      "type": "integer"
+    },
+    "religion_name": {
+      "type": "string"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "success": {
+      "type": "boolean"
+    },
+    "type": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "player_id",
+    "religion_id",
+    "religion_name",
+    "request_id",
+    "success",
+    "type"
+  ],
+  "title": "found_religion_result",
+  "type": "object"
+}

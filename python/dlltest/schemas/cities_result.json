@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "cities": {
+      "items": {
+        "properties": {
+          "food": {
+            "properties": {
+              "stored": {
+                "type": "integer"
+              },
+              "threshold": {
+                "type": "integer"
+              },
+              "turns_to_growth": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "stored",
+              "threshold",
+              "turns_to_growth"
+            ],
+            "type": "object"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "is_capital": {
+            "type": "boolean"
+          },
+          "is_puppet": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "population": {
+            "type": "integer"
+          },
+          "production": {
+            "properties": {
+              "building_type": {
+                "type": "integer"
+              },
+              "cost": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "progress": {
+                "type": "integer"
+              },
+              "turns_left": {
+                "type": "integer"
+              },
+              "type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "building_type",
+              "cost",
+              "name",
+              "progress",
+              "turns_left",
+              "type"
+            ],
+            "type": "object"
+          },
+          "strength": {
+            "type": "integer"
+          },
+          "x": {
+            "type": "integer"
+          },
+          "y": {
+            "type": "integer"
+          },
+          "yields_per_turn": {
+            "properties": {
+              "culture_times100": {
+                "type": "integer"
+              },
+              "faith_times100": {
+                "type": "integer"
+              },
+              "food_times100": {
+                "type": "integer"
+              },
+              "gold_times100": {
+                "type": "integer"
+              },
+              "production_times100": {
+                "type": "integer"
+              },
+              "science_times100": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "culture_times100",
+              "faith_times100",
+              "food_times100",
+              "gold_times100",
+              "production_times100",
+              "science_times100"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "food",
+          "id",
+          "is_capital",
+          "is_puppet",
+          "name",
+          "population",
+          "production",
+          "strength",
+          "x",
+          "y",
+          "yields_per_turn"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "player_id": {
+      "type": "integer"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "turn": {
+      "type": "integer"
+    },
+    "type": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "cities",
+    "player_id",
+    "request_id",
+    "turn",
+    "type"
+  ],
+  "title": "cities_result",
+  "type": "object"
+}

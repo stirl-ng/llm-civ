@@ -1,0 +1,116 @@
+{
+  "moves_remaining": 120,
+  "success": true,
+  "tiles": [
+    {
+      "can_attack": false,
+      "can_enter": true,
+      "moves_left": 120,
+      "path_length": 0,
+      "x": 49,
+      "y": 17
+    },
+    {
+      "can_attack": false,
+      "can_enter": false,
+      "moves_left": 60,
+      "path_length": 0,
+      "x": 50,
+      "y": 18
+    },
+    {
+      "can_attack": false,
+      "can_enter": true,
+      "moves_left": 60,
+      "path_length": 0,
+      "x": 50,
+      "y": 17
+    },
+    {
+      "can_attack": false,
+      "can_enter": true,
+      "moves_left": 60,
+      "path_length": 0,
+      "x": 49,
+      "y": 16
+    },
+    {
+      "can_attack": false,
+      "can_enter": true,
+      "moves_left": 0,
+      "path_length": 0,
+      "x": 50,
+      "y": 16
+    },
+    {
+      "can_attack": false,
+      "can_enter": true,
+      "moves_left": 0,
+      "path_length": 0,
+      "x": 48,
+      "y": 17
+    },
+    {
+      "can_attack": false,
+      "can_enter": true,
+      "moves_left": 0,
+      "path_length": 0,
+      "x": 49,
+      "y": 18
+    },
+    {
+      "can_attack": false,
+      "can_enter": true,
+      "moves_left": 0,
+      "path_length": 0,
+      "x": 50,
+      "y": 19
+    },
+    {
+      "can_attack": false,
+      "can_enter": true,
+      "moves_left": 0,
+      "path_length": 0,
+      "x": 51,
+      "y": 17
+    },
+    {
+      "can_attack": false,
+      "can_enter": true,
+      "moves_left": 0,
+      "path_length": 0,
+      "x": 49,
+      "y": 15
+    },
+    {
+      "can_attack": false,
+      "can_enter": true,
+      "moves_left": 0,
+      "path_length": 0,
+      "x": 48,
+      "y": 16
+    },
+    {
+      "can_attack": false,
+      "can_enter": true,
+      "moves_left": 0,
+      "path_length": 0,
+      "x": 51,
+      "y": 18
+    },
+    {
+      "can_attack": false,
+      "can_enter": true,
+      "moves_left": 0,
+      "path_length": 0,
+      "x": 48,
+      "y": 15
+    }
+  ],
+  "type": "reachable_tiles_result",
+  "unit_id": 1002,
+  "unit_position": {
+    "x": 49,
+    "y": 17
+  }
+}

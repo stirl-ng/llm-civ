@@ -1,0 +1,47 @@
+{
+  "city_id": 1025,
+  "city_name": "Paris",
+  "constructable_buildings": [
+    {
+      "id": 28,
+      "name": "Monument",
+      "turns": 5
+    },
+    {
+      "id": 100,
+      "name": "Shrine",
+      "turns": 5
+    }
+  ],
+  "creatable_projects": [],
+  "current_production": {
+    "item_id": 40,
+    "name": "Granary",
+    "order_type": 1,
+    "turns_remaining": 5
+  },
+  "maintainable_processes": [],
+  "trainable_units": [
+    {
+      "id": 0,
+      "name": "Settler",
+      "turns": 9
+    },
+    {
+      "id": 1,
+      "name": "Worker",
+      "turns": 8
+    },
+    {
+      "id": 82,
+      "name": "Scout",
+      "turns": 3
+    },
+    {
+      "id": 83,
+      "name": "Warrior",
+      "turns": 5
+    }
+  ],
+  "type": "city_production_result"
+}
