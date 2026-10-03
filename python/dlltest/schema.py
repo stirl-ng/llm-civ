@@ -135,3 +135,41 @@ class SchemaBook:
             schema["title"] = msg_type
             self._path(msg_type).write_text(json.dumps(schema, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
         return sorted(self._dirty)
+
+
+# Keys the orchestrator's MessageLogger adds to every logged message.
+_LOGGER_KEYS = {"timestamp", "uuid", "direction"}
+_LOGGER_METADATA = {"turn", "game_id", "player_id"}
+
+
+def update_from_logs(paths: list[Path]) -> list[str]:
+    """Merge every DLL message in dlltest JSONL logs into the schemas.
+
+    Saves a reload: a run that failed only because a schema had not seen a
+    reply shape yet (a success where drafting saw a refusal) logged that
+    reply, so it can be merged in afterwards. The logger adds turn, game_id
+    and player_id to every entry; they are dropped unless the schema already
+    has them.
+    """
+    book = SchemaBook(update=True)
+    for path in paths:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            entry = json.loads(line)
+            if entry.get("direction") != "incoming":
+                continue
+            known = (book._load(entry.get("type", "unknown")) or {}).get("properties", {})
+            message = {
+                k: v for k, v in entry.items()
+                if k not in _LOGGER_KEYS and (k not in _LOGGER_METADATA or k in known)
+            }
+            book.check(message)
+    return book.save()
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Merge logged DLL messages into python/dlltest/schemas.")
+    parser.add_argument("logs", nargs="+", type=Path, help="python/logs/dlltest/game_<id>.jsonl files")
+    written = update_from_logs(parser.parse_args().logs)
+    print(f"updated {len(written)} schemas: {', '.join(written)}")

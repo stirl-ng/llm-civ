@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "civilization": {
+      "type": "string"
+    },
+    "civilization_type": {
+      "type": "string"
+    },
+    "leader": {
+      "type": "string"
+    },
+    "popup_type": {
+      "type": "string"
+    },
+    "session_id": {
+      "type": "integer"
+    },
+    "trait_description": {
+      "type": "string"
+    },
+    "trait_name": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    },
+    "uniques": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "civilization",
+    "civilization_type",
+    "leader",
+    "popup_type",
+    "session_id",
+    "trait_description",
+    "trait_name",
+    "type",
+    "uniques"
+  ],
+  "title": "game_start",
+  "type": "object"
+}
