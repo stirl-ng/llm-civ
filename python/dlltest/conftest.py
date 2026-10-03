@@ -103,12 +103,9 @@ def _identify(transport: DllTransport) -> Game:
     saves: dict[str, dict[str, Any]] = yaml.safe_load(SAVES_FILE.read_text())["saves"]
     for name, info in saves.items():
         if info["game_id"] == game_id:
-            if info["turn"] != turn:
-                pytest.exit(
-                    f"Save 'dlltest_{name}' starts on turn {info['turn']}, but the game is on turn {turn}. "
-                    "Reload it and run again.",
-                    returncode=3,
-                )
+            # A game that has moved past the save's turn is still this save: the
+            # turn and soak tests run on it, and fresh_save skips the tests that
+            # need the save exactly as loaded.
             return Game(name, game_id, event.get("player_id"), turn, info)
 
     known = ", ".join(f"'dlltest_{name}'" for name in saves)
@@ -154,8 +151,13 @@ def game(_connection) -> Game:
 
 
 @pytest.fixture(scope="module")
-def fresh_save(call) -> None:
-    """Skip unless the save is as loaded: every unit awake with full moves."""
+def fresh_save(call, game: Game) -> None:
+    """Skip unless the save is as loaded: its start turn, every unit awake with full moves."""
+    if game.turn != game.info["turn"]:
+        pytest.skip(
+            f"the game is on turn {game.turn}, but 'dlltest_{game.save}' starts on turn "
+            f"{game.info['turn']}; reload it to run these tests"
+        )
     for unit in call("get_units", "units_result")["units"]:
         if unit["moves_remaining"] != unit["max_moves"] or unit["activity"] != "AWAKE":
             pytest.skip("the game changed since the save was loaded; reload it to run these tests")

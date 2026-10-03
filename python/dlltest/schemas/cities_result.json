@@ -57,10 +57,12 @@
               },
               "type": {
                 "type": "string"
+              },
+              "unit_type": {
+                "type": "integer"
               }
             },
             "required": [
-              "building_type",
               "cost",
               "name",
               "progress",

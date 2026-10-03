@@ -1,6 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
+    "action": {
+      "type": "string"
+    },
     "error": {
       "properties": {
         "code": {
@@ -16,6 +19,12 @@
       ],
       "type": "object"
     },
+    "name": {
+      "type": "string"
+    },
+    "policy_id": {
+      "type": "integer"
+    },
     "request_id": {
       "type": "string"
     },
@@ -27,7 +36,6 @@
     }
   },
   "required": [
-    "error",
     "request_id",
     "success",
     "type"

@@ -4,6 +4,9 @@
     "blockers": {
       "items": {
         "properties": {
+          "notification_index": {
+            "type": "integer"
+          },
           "type": {
             "type": "string"
           },
@@ -25,11 +28,7 @@
         },
         "required": [
           "type",
-          "type_id",
-          "unit_id",
-          "unit_name",
-          "x",
-          "y"
+          "type_id"
         ],
         "type": "object"
       },

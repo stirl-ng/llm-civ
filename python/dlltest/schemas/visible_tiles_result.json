@@ -16,6 +16,15 @@
           "feature_type": {
             "type": "integer"
           },
+          "improvement_name": {
+            "type": "string"
+          },
+          "improvement_pillaged": {
+            "type": "boolean"
+          },
+          "improvement_type": {
+            "type": "integer"
+          },
           "is_hills": {
             "type": "boolean"
           },

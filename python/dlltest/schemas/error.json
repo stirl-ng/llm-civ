@@ -1,6 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
+    "blocking_type": {
+      "type": "string"
+    },
+    "blocking_type_id": {
+      "type": "integer"
+    },
     "code": {
       "type": "string"
     },
@@ -12,6 +18,9 @@
     },
     "message": {
       "type": "string"
+    },
+    "notification_index": {
+      "type": "integer"
     },
     "request_id": {
       "type": "string"
