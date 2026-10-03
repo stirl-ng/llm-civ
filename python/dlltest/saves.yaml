@@ -8,6 +8,5 @@
 saves:
   base:
     file: saves/base.Civ5Save
-    game_id: 685670324
-    turn: 0
-    # Germany (Bismarck), 66x42 map, 18 civs. Settler 1001 and warrior 1002, no cities.
+    game_id: 696192423
+    turn: 12
