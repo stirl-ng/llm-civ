@@ -54,7 +54,7 @@ def snapshot(game, pytestconfig):
         actual = json.dumps(normalize(response), indent=2) + "\n"
         if update:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(actual, encoding="utf-8")
+            path.write_text(actual, encoding="utf-8", newline="\n")
             return
         if not path.exists():
             pytest.fail(f"no snapshot {path.relative_to(SNAPSHOT_DIR)}; run with --update-snapshots to create it")

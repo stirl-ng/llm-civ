@@ -133,5 +133,5 @@ class SchemaBook:
             schema = dict(self._schemas[msg_type])
             schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
             schema["title"] = msg_type
-            self._path(msg_type).write_text(json.dumps(schema, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            self._path(msg_type).write_text(json.dumps(schema, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
         return sorted(self._dirty)
