@@ -112,8 +112,8 @@ class PipeTransport(DllTransport):
             if self._server.get_pipe_connection(timeout=0.25):
                 return
         raise TransportError(
-            f"The DLL did not connect within {timeout:.0f}s. Start Civ V with the "
-            "Community Patch mod and load a test save (see python/dlltest/saves.yaml)."
+            f"The DLL did not connect within {timeout:.0f}s. In Civ V, go to Mods > Next > "
+            "Load Game and load a dlltest_* save (see python/dlltest/saves.yaml)."
         )
 
     def request(self, message: dict[str, Any], timeout: float = 10.0) -> dict[str, Any]:

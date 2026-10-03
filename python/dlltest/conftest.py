@@ -52,16 +52,17 @@ def _identify(transport: DllTransport) -> Game:
         if info["game_id"] == game_id:
             if info["turn"] != turn:
                 pytest.exit(
-                    f"Save '{name}' starts on turn {info['turn']}, but the game is on turn {turn}. "
-                    f"Reload '{info['file']}' and run again.",
+                    f"Save 'dlltest_{name}' starts on turn {info['turn']}, but the game is on turn {turn}. "
+                    "Reload it and run again.",
                     returncode=3,
                 )
             return Game(name, game_id, event.get("player_id"), turn, info)
 
-    known = ", ".join(f"'{s['file']}'" for s in saves.values())
+    known = ", ".join(f"'dlltest_{name}'" for name in saves)
     pytest.exit(
         f"The loaded game (game_id {game_id}, turn {turn}) is not a known test save. "
-        f"Load one of: {known}. For a new save, add it to {SAVES_FILE.name}.",
+        f"Load one of {known} from Mods > Next > Load Game (install them with "
+        f"scripts/install-test-saves.ps1). For a new save, add it to {SAVES_FILE.name}.",
         returncode=3,
     )
 
