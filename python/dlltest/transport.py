@@ -126,6 +126,9 @@ class PipeTransport(DllTransport):
             raise TransportError(f"{msg_type}: no response within {timeout:.0f}s")
         if response.get("error") == "Pipe write failed":
             raise TransportError(f"{msg_type}: pipe write failed (DLL disconnected?)")
+        # NamedPipeServer hands replies straight to the caller without logging
+        # them; log here so a failed run leaves the full exchange in the JSONL.
+        message_logger.get_message_logger().log(dict(response), direction="incoming")
         return response
 
     def next_event(

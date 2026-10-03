@@ -32,12 +32,29 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--connect-timeout", type=float, default=30.0,
         help="Seconds to wait for the DLL to connect (default 30).",
     )
+    parser.addoption(
+        "--soak-turns", type=int, default=0,
+        help="Turns for test_soak to end (default 0: skip the soak).",
+    )
 
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "smoke: fast per-command checks against a loaded test save")
     config.addinivalue_line("markers", "snapshot: compare read responses with stored copies")
     config.addinivalue_line("markers", "soak: end many turns and watch for crashes or hangs")
+
+
+# Run order. Reads go before writes so they see the save as loaded; turn tests
+# go last because they end the turn. test_coverage needs no game, so it runs first.
+_MODULE_ORDER = ["test_coverage", "test_snapshots", "test_commands", "test_writes", "test_turns"]
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    def rank(item: pytest.Item) -> int:
+        name = item.module.__name__.rsplit(".", 1)[-1]
+        return _MODULE_ORDER.index(name) if name in _MODULE_ORDER else len(_MODULE_ORDER)
+
+    items.sort(key=rank)  # stable: keeps file order within a module
 
 
 def _identify(transport: DllTransport) -> Game:
