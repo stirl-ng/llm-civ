@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-pytestmark = pytest.mark.smoke
+pytestmark = [pytest.mark.smoke, pytest.mark.usefixtures("fresh_save")]
+
 
 CONTROL_CENTERONSELECTION = 0  # ControlTypes in CvEnums.h
 
@@ -34,12 +35,6 @@ def assert_refused(response: dict, code: str) -> None:
     assert response.get("success") is False, f"expected a refusal, got {response}"
     assert response["error"]["code"] == code, f"expected {code}, got {response}"
 
-
-@pytest.fixture(scope="module", autouse=True)
-def fresh_save(call):
-    for unit in units_by_id(call).values():
-        if unit["moves_remaining"] != unit["max_moves"] or unit["activity"] != "AWAKE":
-            pytest.skip("the game changed since the save was loaded; reload it to run the write tests")
 
 
 # --- Units -----------------------------------------------------------------

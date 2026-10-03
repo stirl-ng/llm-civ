@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable, Optional
 
 import pytest
 import yaml
 
+from dlltest.schema import SchemaBook
 from dlltest.transport import DllTransport, PipeTransport, TransportError
 
 SAVES_FILE = Path(__file__).resolve().parent / "saves.yaml"
@@ -36,6 +37,41 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--soak-turns", type=int, default=0,
         help="Turns for test_soak to end (default 0: skip the soak).",
     )
+    parser.addoption(
+        "--update-schemas", action="store_true",
+        help="Merge every message seen into schemas/<type>.json instead of checking against it.",
+    )
+    parser.addoption(
+        "--update-snapshots", action="store_true",
+        help="Rewrite snapshots/<save>/*.json from this run instead of comparing.",
+    )
+
+
+class CheckedTransport(DllTransport):
+    """Wraps a transport and checks every reply and event against its schema."""
+
+    def __init__(self, inner: DllTransport, schemas: SchemaBook):
+        self._inner = inner
+        self._schemas = schemas
+
+    def start(self) -> None:
+        self._inner.start()
+
+    def wait_connected(self, timeout: float) -> None:
+        self._inner.wait_connected(timeout)
+
+    def request(self, message: dict[str, Any], timeout: float = 10.0) -> dict[str, Any]:
+        response = self._inner.request(message, timeout)
+        self._schemas.check(response)
+        return response
+
+    def next_event(self, types: Optional[Iterable[str]] = None, timeout: float = 10.0) -> dict[str, Any]:
+        event = self._inner.next_event(types, timeout)
+        self._schemas.check(event)
+        return event
+
+    def stop(self) -> None:
+        self._inner.stop()
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -85,8 +121,17 @@ def _identify(transport: DllTransport) -> Game:
 
 
 @pytest.fixture(scope="session")
-def _connection(pytestconfig: pytest.Config):
-    transport = PipeTransport()
+def schemas(pytestconfig: pytest.Config):
+    book = SchemaBook(update=pytestconfig.getoption("--update-schemas"))
+    yield book
+    if book.update:
+        written = book.save()
+        print(f"\nupdated {len(written)} schemas in python/dlltest/schemas/: {', '.join(written)}")
+
+
+@pytest.fixture(scope="session")
+def _connection(pytestconfig: pytest.Config, schemas: SchemaBook):
+    transport = CheckedTransport(PipeTransport(), schemas)
     transport.start()
     try:
         transport.wait_connected(pytestconfig.getoption("--connect-timeout"))
@@ -106,6 +151,14 @@ def dll(_connection) -> DllTransport:
 @pytest.fixture(scope="session")
 def game(_connection) -> Game:
     return _connection[1]
+
+
+@pytest.fixture(scope="module")
+def fresh_save(call) -> None:
+    """Skip unless the save is as loaded: every unit awake with full moves."""
+    for unit in call("get_units", "units_result")["units"]:
+        if unit["moves_remaining"] != unit["max_moves"] or unit["activity"] != "AWAKE":
+            pytest.skip("the game changed since the save was loaded; reload it to run these tests")
 
 
 @pytest.fixture(scope="session")

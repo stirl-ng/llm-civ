@@ -27,3 +27,5 @@ python/configs/experiments/*
 !python/configs/experiments/sample.yaml
 python/configs/observer/*
 !python/configs/observer/observer.sample.yaml
+!python/dlltest/schemas/*.json
+!python/dlltest/snapshots/**/*.json
